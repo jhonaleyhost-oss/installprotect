@@ -126,7 +126,7 @@ cat > "$INDEX_FILE" << 'EOF'
                 <i class="fa fa-info-circle"></i> 
                 Protected by: 
                 <span class="label label-primary">Jhonaley Tech</span>
-                <span class="label label-success">@dannagvalentp</span>
+                <span class="label label-success">@danagvalentp</span>
                 <span class="label label-info">@jhonaleytesti3</span>
             </p>
         </div>
