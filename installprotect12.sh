@@ -1,24 +1,20 @@
 #!/bin/bash
 
-# --- Variabel dan Path ---
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
-VIEW_PATH="/var/www/pterodactyl/resources/views/admin/nodes/view"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
-BACKUP_CONTROLLER="${REMOTE_PATH}.bak_${TIMESTAMP}"
+BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
 
-echo "🚀 Memasang proteksi Anti Akses Nodes..."
+echo "🚀 Memasang proteksi Anti Akses Settings..."
 
-# --- Bagian 1: Modifikasi PHP Controller ---
 if [ -f "$REMOTE_PATH" ]; then
-  mv "$REMOTE_PATH" "$BACKUP_CONTROLLER"
-  echo "📦 Backup file lama NodeViewController.php dibuat di $BACKUP_CONTROLLER"
+  mv "$REMOTE_PATH" "$BACKUP_PATH"
+  echo "📦 Backup file lama dibuat di $BACKUP_PATH"
 fi
 
 mkdir -p "$(dirname "$REMOTE_PATH")"
 chmod 755 "$(dirname "$REMOTE_PATH")"
 
-# Menulis konten PHP baru dengan label EOCONTROLLER
-cat > "$REMOTE_PATH" << 'EOCONTROLLER'
+cat > "$REMOTE_PATH" << 'EOF'
 <?php
 
 namespace Pterodactyl\Http\Controllers\Admin\Nodes;
@@ -209,21 +205,17 @@ class NodeViewController extends Controller
     }
 }
 ?>
-EOCONTROLLER
 
-chmod 644 "$REMOTE_PATH"
-echo "✅ NodeViewController.php berhasil dimodifikasi."
-
-# --- Bagian 2: Modifikasi Blade View ---
+# Juga proteksi file view template untuk efek blur
+VIEW_PATH="/var/www/pterodactyl/resources/views/admin/nodes/view"
 if [ -d "$VIEW_PATH" ]; then
     # Backup template index jika ada
     if [ -f "$VIEW_PATH/index.blade.php" ]; then
         cp "$VIEW_PATH/index.blade.php" "$VIEW_PATH/index.blade.php.bak_$TIMESTAMP"
-        echo "📦 Backup file lama index.blade.php dibuat di $VIEW_PATH/index.blade.php.bak_$TIMESTAMP"
     fi
     
-    # Buat template dengan efek blur untuk admin lain menggunakan label EOVIEW
-    cat > "$VIEW_PATH/index.blade.php" << 'EOVIEW'
+    # Buat template dengan efek blur untuk admin lain
+    cat > "$VIEW_PATH/index.blade.php" << 'EOF'
 @extends('layouts.admin')
 
 @section('title')
@@ -339,9 +331,9 @@ if [ -d "$VIEW_PATH" ]; then
     </div>
 </div>
 @endsection
-EOVIEW
+EOF
 
-    echo "✅ Template view index.blade.php dengan efek blur berhasil dipasang!"
+    echo "✅ Template view dengan efek blur berhasil dipasang!"
 fi
 
 echo "✅ Proteksi Anti Akses Admin Nodes View berhasil dipasang!"
@@ -350,13 +342,3 @@ echo "📂 Lokasi template view: $VIEW_PATH"
 echo "🗂️ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
 echo "🔒 Hanya Admin ID 1 yang bisa akses normal, admin lain akan melihat efek blur dan error 403"
 echo "🚫 Pesan error: 'akses ditolak, protect by @danangvalentp'"
-
-# --- Langkah Terakhir: Bersihkan Cache Pterodactyl ---
-echo "⚙️ Membersihkan cache Pterodactyl untuk menerapkan perubahan..."
-cd /var/www/pterodactyl || { echo "Direktori Pterodactyl tidak ditemukan. Lewati pembersihan cache."; exit 0; }
-
-php artisan view:clear
-php artisan cache:clear
-php artisan config:clear
-echo "✅ Cache Pterodactyl berhasil dibersihkan."
-
