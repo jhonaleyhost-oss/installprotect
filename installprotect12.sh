@@ -1,130 +1,131 @@
 #!/bin/bash
 
+CONTROLLER="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
 echo "🚀 Memasang proteksi Anti Akses Node View..."
 
-# === LANGKAH 1: Buat Middleware ===
-MIDDLEWARE_PATH="/var/www/pterodactyl/app/Http/Middleware/AdminOnlyMiddleware.php"
+# === LANGKAH 1: Restore dari backup terakhir ===
+LATEST_BACKUP=$(ls -t "${CONTROLLER}.bak_"* 2>/dev/null | head -1)
 
-if [ -f "$MIDDLEWARE_PATH" ]; then
-  cp "$MIDDLEWARE_PATH" "${MIDDLEWARE_PATH}.bak_${TIMESTAMP}"
+if [ -n "$LATEST_BACKUP" ]; then
+  cp "$LATEST_BACKUP" "$CONTROLLER"
+  echo "📦 File di-restore dari backup: $LATEST_BACKUP"
+else
+  echo "⚠️ Tidak ada backup ditemukan, menggunakan file saat ini"
 fi
 
-cat > "$MIDDLEWARE_PATH" << 'MEOF'
+# Backup lagi sebelum modifikasi
+cp "$CONTROLLER" "${CONTROLLER}.bak_${TIMESTAMP}"
+
+# === LANGKAH 2: Cek isi file saat ini ===
+echo ""
+echo "📋 Isi 5 baris pertama file:"
+head -5 "$CONTROLLER"
+echo "..."
+echo ""
+
+# === LANGKAH 3: Buat file middleware terpisah ===
+MIDDLEWARE="/var/www/pterodactyl/app/Http/Middleware/NodeProtect.php"
+
+cat > "$MIDDLEWARE" << 'EOF'
 <?php
 
 namespace Pterodactyl\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
-class AdminOnlyMiddleware
+class NodeProtect
 {
     public function handle(Request $request, Closure $next)
     {
-        $user = Auth::user();
-
+        $user = $request->user();
         if (!$user || (int) $user->id !== 1) {
             abort(403, 'Akses ditolak - protect by Jhonaley Tech');
         }
-
         return $next($request);
     }
 }
-MEOF
+EOF
 
-chmod 644 "$MIDDLEWARE_PATH"
-echo "✅ Middleware AdminOnlyMiddleware berhasil dibuat"
+chmod 644 "$MIDDLEWARE"
+echo "✅ Middleware NodeProtect dibuat"
 
-# === LANGKAH 2: Daftarkan middleware di Kernel.php ===
-KERNEL_PATH="/var/www/pterodactyl/app/Http/Kernel.php"
+# === LANGKAH 4: Daftarkan di Kernel.php ===
+KERNEL="/var/www/pterodactyl/app/Http/Kernel.php"
+cp "$KERNEL" "${KERNEL}.bak_${TIMESTAMP}"
 
-if [ -f "$KERNEL_PATH" ]; then
-  cp "$KERNEL_PATH" "${KERNEL_PATH}.bak_${TIMESTAMP}"
-
-  # Cek apakah sudah terdaftar
-  if ! grep -q "admin.only" "$KERNEL_PATH"; then
-    # Tambahkan ke $routeMiddleware array
-    sed -i "/'auth' =>/a\\        'admin.only' => \\\\Pterodactyl\\\\Http\\\\Middleware\\\\AdminOnlyMiddleware::class," "$KERNEL_PATH"
+if ! grep -q "'node.protect'" "$KERNEL"; then
+  # Cari baris yang mengandung 'admin' => di routeMiddleware dan tambahkan setelahnya
+  sed -i "/'admin' =>/a\\        'node.protect' => \\\\Pterodactyl\\\\Http\\\\Middleware\\\\NodeProtect::class," "$KERNEL"
+  
+  if grep -q "'node.protect'" "$KERNEL"; then
     echo "✅ Middleware didaftarkan di Kernel.php"
   else
-    echo "⚠️ Middleware sudah terdaftar di Kernel.php"
+    echo "❌ Gagal daftarkan middleware di Kernel. Coba manual."
+    echo "   Tambahkan baris ini di \$routeMiddleware di app/Http/Kernel.php:"
+    echo "   'node.protect' => \\Pterodactyl\\Http\\Middleware\\NodeProtect::class,"
   fi
 else
-  echo "❌ Kernel.php tidak ditemukan!"
-  exit 1
+  echo "⚠️ Middleware sudah terdaftar"
 fi
 
-# === LANGKAH 3: Tambahkan middleware ke route node view ===
-ROUTES_PATH="/var/www/pterodactyl/routes/admin.php"
+# === LANGKAH 5: Tambahkan middleware ke route ===
+ROUTES="/var/www/pterodactyl/routes/admin.php"
+cp "$ROUTES" "${ROUTES}.bak_${TIMESTAMP}"
 
-if [ -f "$ROUTES_PATH" ]; then
-  cp "$ROUTES_PATH" "${ROUTES_PATH}.bak_${TIMESTAMP}"
+echo ""
+echo "📋 Mencari route nodes view di routes/admin.php..."
+grep -n "nodes" "$ROUTES" | head -20
+echo ""
 
-  # Cek apakah sudah ada middleware admin.only di route nodes view
-  if ! grep -q "admin.only" "$ROUTES_PATH"; then
-    # Cari route group untuk nodes view dan tambahkan middleware
-    # Pendekatan: wrap semua route nodes/view dengan middleware tambahan
-    sed -i "/Route.*admin\.nodes\.view/,/);/{
-      s/->group(function/->middleware('admin.only')->group(function/
-    }" "$ROUTES_PATH"
+# Cari pattern route group untuk node view
+# Biasanya: Route::group(['prefix' => '/nodes/view/{node}'], function () {
+# Kita tambahkan middleware ke group tersebut
 
-    # Jika sed tidak berhasil (pattern tidak cocok), coba cara lain
-    if ! grep -q "admin.only" "$ROUTES_PATH"; then
-      echo "⚠️ Tidak bisa inject otomatis ke routes. Menggunakan cara alternatif..."
-
-      # Restore dan gunakan pendekatan controller langsung
-      cp "${ROUTES_PATH}.bak_${TIMESTAMP}" "$ROUTES_PATH"
-
-      # === CARA ALTERNATIF: Patch controller langsung ===
-      CONTROLLER_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
-
-      if [ -f "$CONTROLLER_PATH" ]; then
-        cp "$CONTROLLER_PATH" "${CONTROLLER_PATH}.bak_${TIMESTAMP}"
-
-        # Tambahkan use Auth jika belum ada
-        if ! grep -q "use Illuminate\\\\Support\\\\Facades\\\\Auth;" "$CONTROLLER_PATH"; then
-          sed -i '/^namespace /a use Illuminate\\Support\\Facades\\Auth;' "$CONTROLLER_PATH"
-        fi
-
-        # Tambahkan middleware di constructor
-        if ! grep -q "PROTEKSI_JHONALEY" "$CONTROLLER_PATH"; then
-          # Cari __construct dan tambahkan middleware di dalamnya
-          sed -i '/__construct/,/{/{
-            /{/a\        // PROTEKSI_JHONALEY\n        $this->middleware(function ($request, $next) {\n            if ((int) $request->user()->id !== 1) {\n                abort(403, '"'"'Akses ditolak - protect by Jhonaley Tech'"'"');\n            }\n            return $next($request);\n        });
-          }' "$CONTROLLER_PATH"
-        fi
-
-        chmod 644 "$CONTROLLER_PATH"
-        echo "✅ Proteksi diinjeksi langsung ke constructor NodeViewController"
-      else
-        echo "❌ NodeViewController.php tidak ditemukan!"
-        exit 1
-      fi
-    else
-      echo "✅ Middleware berhasil ditambahkan ke routes"
-    fi
+if ! grep -q "node.protect" "$ROUTES"; then
+  # Coba beberapa pattern yang umum di Pterodactyl
+  
+  # Pattern 1: nodes/view group
+  sed -i "s|'prefix' => '/nodes/view/{node}'|'prefix' => '/nodes/view/{node}', 'middleware' => 'node.protect'|g" "$ROUTES"
+  
+  # Pattern 2: nodes/view/{node} tanpa prefix
+  sed -i "s|'prefix' => 'nodes/view/{node}'|'prefix' => 'nodes/view/{node}', 'middleware' => 'node.protect'|g" "$ROUTES"
+  
+  # Pattern 3: cek apakah berhasil
+  if grep -q "node.protect" "$ROUTES"; then
+    echo "✅ Middleware ditambahkan ke route nodes view"
   else
-    echo "⚠️ Middleware sudah ada di routes"
+    echo "⚠️ Pattern route tidak cocok. Menampilkan route terkait nodes:"
+    grep -n -A2 -B2 "node" "$ROUTES" | head -40
+    echo ""
+    echo "❗ Tambahkan middleware MANUAL di routes/admin.php:"
+    echo "   Cari group route untuk nodes view, tambahkan: 'middleware' => 'node.protect'"
+    echo ""
+    echo "   Atau tambahkan di controller constructor:"
+    echo "   \$this->middleware(\\Pterodactyl\\Http\\Middleware\\NodeProtect::class);"
   fi
 else
-  echo "❌ File routes/admin.php tidak ditemukan!"
-  exit 1
+  echo "⚠️ Middleware sudah ada di routes"
 fi
 
-# === LANGKAH 4: Clear cache ===
+# === LANGKAH 6: Clear cache ===
 cd /var/www/pterodactyl
 php artisan route:clear 2>/dev/null
-php artisan config:clear 2>/dev/null
+php artisan config:clear 2>/dev/null  
 php artisan cache:clear 2>/dev/null
+php artisan view:clear 2>/dev/null
 echo "✅ Cache dibersihkan"
 
 echo ""
-echo "✅ Proteksi Anti Akses Node View berhasil dipasang!"
-echo "🔒 Hanya Admin ID 1 yang bisa akses Node View"
+echo "========================================="
+echo "✅ Proteksi Node View selesai!"
+echo "🔒 Hanya Admin ID 1 yang bisa akses"
+echo "========================================="
 echo ""
-echo "⚠️ Jika ada error, restore dengan:"
-echo "   cp ${KERNEL_PATH}.bak_${TIMESTAMP} $KERNEL_PATH"
-echo "   php artisan route:clear && php artisan config:clear"
+echo "⚠️ Jika masih 500 error, restore SEMUA file:"
+echo "   cp ${CONTROLLER}.bak_${TIMESTAMP} $CONTROLLER"
+echo "   cp ${KERNEL}.bak_${TIMESTAMP} $KERNEL"  
+echo "   cp ${ROUTES}.bak_${TIMESTAMP} $ROUTES"
+echo "   cd /var/www/pterodactyl && php artisan route:clear && php artisan config:clear"
