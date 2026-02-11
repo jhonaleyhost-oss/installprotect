@@ -1,131 +1,261 @@
 #!/bin/bash
 
-CONTROLLER="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
-echo "🚀 Memasang proteksi Anti Akses Node View..."
+echo "🚀 Memasang proteksi Nodes (Sembunyikan + Block Akses)..."
+echo ""
 
-# === LANGKAH 1: Restore dari backup terakhir ===
-LATEST_BACKUP=$(ls -t "${CONTROLLER}.bak_"* 2>/dev/null | head -1)
+# === LANGKAH 1: Restore controller dari backup asli ===
+CONTROLLER="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
+LATEST_BACKUP=$(ls -t "${CONTROLLER}.bak_"* 2>/dev/null | tail -1)
 
 if [ -n "$LATEST_BACKUP" ]; then
   cp "$LATEST_BACKUP" "$CONTROLLER"
-  echo "📦 File di-restore dari backup: $LATEST_BACKUP"
+  echo "📦 Controller di-restore dari backup paling awal: $LATEST_BACKUP"
 else
-  echo "⚠️ Tidak ada backup ditemukan, menggunakan file saat ini"
+  echo "⚠️ Tidak ada backup, menggunakan file saat ini"
 fi
 
-# Backup lagi sebelum modifikasi
 cp "$CONTROLLER" "${CONTROLLER}.bak_${TIMESTAMP}"
 
-# === LANGKAH 2: Cek isi file saat ini ===
+# === LANGKAH 2: Inject proteksi ke controller pakai python3 ===
+python3 << 'PYEOF'
+import re
+
+controller = "/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
+
+with open(controller, "r") as f:
+    content = f.read()
+
+# Skip jika sudah ada proteksi
+if "PROTEKSI_JHONALEY" in content:
+    print("⚠️ Proteksi sudah ada di controller")
+    exit(0)
+
+# Tambahkan use Auth jika belum ada
+if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+    content = content.replace(
+        "use Pterodactyl\\Http\\Controllers\\Controller;",
+        "use Pterodactyl\\Http\\Controllers\\Controller;\nuse Illuminate\\Support\\Facades\\Auth;"
+    )
+
+# Cari semua public function (kecuali __construct) dan inject pengecekan
+lines = content.split("\n")
+new_lines = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    new_lines.append(line)
+    
+    # Detect public function (bukan constructor)
+    if re.search(r'public function (?!__construct)', line):
+        # Cari opening brace {
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        # Tambahkan pengecekan setelah {
+        new_lines.append("        // PROTEKSI_JHONALEY: Hanya admin ID 1")
+        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
+        new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j  # Skip lines we already added
+    
+    i += 1
+
+with open(controller, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ Proteksi berhasil diinjeksi ke controller")
+PYEOF
+
 echo ""
-echo "📋 Isi 5 baris pertama file:"
-head -5 "$CONTROLLER"
-echo "..."
+echo "📋 Verifikasi controller (cari PROTEKSI):"
+grep -n "PROTEKSI_JHONALEY" "$CONTROLLER"
 echo ""
 
-# === LANGKAH 3: Buat file middleware terpisah ===
-MIDDLEWARE="/var/www/pterodactyl/app/Http/Middleware/NodeProtect.php"
+# === LANGKAH 3: Sembunyikan menu Nodes di sidebar ===
+echo "🔧 Menyembunyikan menu Nodes dari sidebar..."
 
-cat > "$MIDDLEWARE" << 'EOF'
-<?php
+# Cari file sidebar layout
+SIDEBAR_FILES=(
+  "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
+  "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
+)
 
-namespace Pterodactyl\Http\Middleware;
-
-use Closure;
-use Illuminate\Http\Request;
-
-class NodeProtect
-{
-    public function handle(Request $request, Closure $next)
-    {
-        $user = $request->user();
-        if (!$user || (int) $user->id !== 1) {
-            abort(403, 'Akses ditolak - protect by Jhonaley Tech');
-        }
-        return $next($request);
-    }
-}
-EOF
-
-chmod 644 "$MIDDLEWARE"
-echo "✅ Middleware NodeProtect dibuat"
-
-# === LANGKAH 4: Daftarkan di Kernel.php ===
-KERNEL="/var/www/pterodactyl/app/Http/Kernel.php"
-cp "$KERNEL" "${KERNEL}.bak_${TIMESTAMP}"
-
-if ! grep -q "'node.protect'" "$KERNEL"; then
-  # Cari baris yang mengandung 'admin' => di routeMiddleware dan tambahkan setelahnya
-  sed -i "/'admin' =>/a\\        'node.protect' => \\\\Pterodactyl\\\\Http\\\\Middleware\\\\NodeProtect::class," "$KERNEL"
-  
-  if grep -q "'node.protect'" "$KERNEL"; then
-    echo "✅ Middleware didaftarkan di Kernel.php"
-  else
-    echo "❌ Gagal daftarkan middleware di Kernel. Coba manual."
-    echo "   Tambahkan baris ini di \$routeMiddleware di app/Http/Kernel.php:"
-    echo "   'node.protect' => \\Pterodactyl\\Http\\Middleware\\NodeProtect::class,"
+SIDEBAR_FOUND=""
+for SF in "${SIDEBAR_FILES[@]}"; do
+  if [ -f "$SF" ]; then
+    SIDEBAR_FOUND="$SF"
+    break
   fi
-else
-  echo "⚠️ Middleware sudah terdaftar"
+done
+
+if [ -z "$SIDEBAR_FOUND" ]; then
+  # Cari file yang mengandung menu Nodes
+  SIDEBAR_FOUND=$(grep -rl "admin.nodes" /var/www/pterodactyl/resources/views/layouts/ 2>/dev/null | head -1)
+  if [ -z "$SIDEBAR_FOUND" ]; then
+    SIDEBAR_FOUND=$(grep -rl "admin.nodes" /var/www/pterodactyl/resources/views/partials/ 2>/dev/null | head -1)
+  fi
 fi
 
-# === LANGKAH 5: Tambahkan middleware ke route ===
-ROUTES="/var/www/pterodactyl/routes/admin.php"
-cp "$ROUTES" "${ROUTES}.bak_${TIMESTAMP}"
-
-echo ""
-echo "📋 Mencari route nodes view di routes/admin.php..."
-grep -n "nodes" "$ROUTES" | head -20
-echo ""
-
-# Cari pattern route group untuk node view
-# Biasanya: Route::group(['prefix' => '/nodes/view/{node}'], function () {
-# Kita tambahkan middleware ke group tersebut
-
-if ! grep -q "node.protect" "$ROUTES"; then
-  # Coba beberapa pattern yang umum di Pterodactyl
+if [ -n "$SIDEBAR_FOUND" ]; then
+  cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}"
+  echo "📂 Sidebar ditemukan: $SIDEBAR_FOUND"
   
-  # Pattern 1: nodes/view group
-  sed -i "s|'prefix' => '/nodes/view/{node}'|'prefix' => '/nodes/view/{node}', 'middleware' => 'node.protect'|g" "$ROUTES"
+  # Tampilkan baris terkait nodes
+  echo "📋 Baris terkait Nodes di sidebar:"
+  grep -n -i "node" "$SIDEBAR_FOUND" | head -10
+  echo ""
   
-  # Pattern 2: nodes/view/{node} tanpa prefix
-  sed -i "s|'prefix' => 'nodes/view/{node}'|'prefix' => 'nodes/view/{node}', 'middleware' => 'node.protect'|g" "$ROUTES"
-  
-  # Pattern 3: cek apakah berhasil
-  if grep -q "node.protect" "$ROUTES"; then
-    echo "✅ Middleware ditambahkan ke route nodes view"
-  else
-    echo "⚠️ Pattern route tidak cocok. Menampilkan route terkait nodes:"
-    grep -n -A2 -B2 "node" "$ROUTES" | head -40
-    echo ""
-    echo "❗ Tambahkan middleware MANUAL di routes/admin.php:"
-    echo "   Cari group route untuk nodes view, tambahkan: 'middleware' => 'node.protect'"
-    echo ""
-    echo "   Atau tambahkan di controller constructor:"
-    echo "   \$this->middleware(\\Pterodactyl\\Http\\Middleware\\NodeProtect::class);"
-  fi
+  # Sembunyikan menu Nodes dengan menambahkan @if(Auth::user()->id === 1)
+  python3 << PYEOF2
+sidebar = "$SIDEBAR_FOUND"
+
+with open(sidebar, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_NODES_SIDEBAR" in content:
+    print("⚠️ Sidebar sudah diproteksi")
+    exit(0)
+
+# Cari link/menu yang mengandung 'admin.nodes' atau 'Nodes'
+# Biasanya berbentuk <li> atau <a> element
+import re
+
+lines = content.split("\n")
+new_lines = []
+i = 0
+nodes_block_start = False
+brace_count = 0
+
+while i < len(lines):
+    line = lines[i]
+    
+    # Cari baris yang mengandung referensi ke nodes menu
+    # Pattern: <li yang di dalamnya ada route('admin.nodes') atau href nodes
+    if not nodes_block_start and ('admin.nodes' in line or "route('admin.nodes')" in line) and 'admin.nodes.view' not in line:
+        # Cari awal <li> sebelum baris ini
+        # Mundur ke baris <li> terdekat
+        li_start = len(new_lines) - 1
+        while li_start >= 0 and '<li' not in new_lines[li_start]:
+            li_start -= 1
+        
+        if li_start >= 0:
+            # Insert @if sebelum <li>
+            new_lines.insert(li_start, "{{-- PROTEKSI_NODES_SIDEBAR --}}")
+            new_lines.insert(li_start, "@if((int) Auth::user()->id === 1)")
+            
+            # Cari penutup </li> yang sesuai
+            new_lines.append(line)
+            i += 1
+            
+            # Cari </li> penutup
+            li_depth = 1
+            while i < len(lines) and li_depth > 0:
+                curr = lines[i]
+                li_depth += curr.count('<li') - curr.count('</li')
+                new_lines.append(curr)
+                i += 1
+            
+            new_lines.append("@endif")
+            continue
+    
+    new_lines.append(line)
+    i += 1
+
+with open(sidebar, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ Menu Nodes disembunyikan dari sidebar")
+PYEOF2
+
 else
-  echo "⚠️ Middleware sudah ada di routes"
+  echo "⚠️ File sidebar tidak ditemukan. Menu Nodes tidak disembunyikan."
+  echo "   Cari manual file layout admin dan tambahkan @if(Auth::user()->id === 1) di sekitar menu Nodes"
 fi
 
-# === LANGKAH 6: Clear cache ===
+# === LANGKAH 4: Proteksi juga NodeController (halaman list nodes) ===
+NODE_LIST="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeController.php"
+if [ -f "$NODE_LIST" ]; then
+  if ! grep -q "PROTEKSI_JHONALEY" "$NODE_LIST"; then
+    cp "$NODE_LIST" "${NODE_LIST}.bak_${TIMESTAMP}"
+    
+    python3 << 'PYEOF3'
+controller = "/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeController.php"
+
+with open(controller, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY" in content:
+    print("⚠️ Sudah ada proteksi")
+    exit(0)
+
+if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+    content = content.replace(
+        "use Pterodactyl\\Http\\Controllers\\Controller;",
+        "use Pterodactyl\\Http\\Controllers\\Controller;\nuse Illuminate\\Support\\Facades\\Auth;"
+    )
+
+import re
+lines = content.split("\n")
+new_lines = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    new_lines.append(line)
+    
+    if re.search(r'public function (?!__construct)', line):
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY: Hanya admin ID 1")
+        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
+        new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    i += 1
+
+with open(controller, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ NodeController juga diproteksi")
+PYEOF3
+  else
+    echo "⚠️ NodeController sudah diproteksi"
+  fi
+fi
+
+# === LANGKAH 5: Clear semua cache ===
 cd /var/www/pterodactyl
 php artisan route:clear 2>/dev/null
-php artisan config:clear 2>/dev/null  
+php artisan config:clear 2>/dev/null
 php artisan cache:clear 2>/dev/null
 php artisan view:clear 2>/dev/null
-echo "✅ Cache dibersihkan"
+echo "✅ Semua cache dibersihkan"
 
 echo ""
-echo "========================================="
-echo "✅ Proteksi Node View selesai!"
-echo "🔒 Hanya Admin ID 1 yang bisa akses"
-echo "========================================="
+echo "==========================================="
+echo "✅ Proteksi Nodes LENGKAP selesai!"
+echo "==========================================="
+echo "🔒 Menu Nodes disembunyikan dari sidebar (selain ID 1)"
+echo "🔒 Akses /admin/nodes diblock (selain ID 1)"
+echo "🔒 Akses /admin/nodes/view/* diblock (selain ID 1)"
+echo "🚀 Panel tetap normal, server tetap jalan"
+echo "==========================================="
 echo ""
-echo "⚠️ Jika masih 500 error, restore SEMUA file:"
+echo "⚠️ Jika ada masalah, restore:"
 echo "   cp ${CONTROLLER}.bak_${TIMESTAMP} $CONTROLLER"
-echo "   cp ${KERNEL}.bak_${TIMESTAMP} $KERNEL"  
-echo "   cp ${ROUTES}.bak_${TIMESTAMP} $ROUTES"
-echo "   cd /var/www/pterodactyl && php artisan route:clear && php artisan config:clear"
+if [ -n "$SIDEBAR_FOUND" ]; then
+echo "   cp ${SIDEBAR_FOUND}.bak_${TIMESTAMP} $SIDEBAR_FOUND"
+fi
+echo "   cd /var/www/pterodactyl && php artisan view:clear && php artisan route:clear"
