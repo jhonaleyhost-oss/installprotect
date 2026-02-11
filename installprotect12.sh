@@ -40,7 +40,7 @@ class NodeViewController extends Controller
         $user = $request->user();
 
         // Admin (user id = 1) bebas akses semua
-        if ($user->id === 1) {
+        if ((int) $user->id === 1) {
             return;
         }
 
@@ -236,7 +236,7 @@ if [ -d "$VIEW_PATH" ]; then
     $user = Auth::user();
 @endphp
 
-@if($user->id !== 1)
+@if((int) $user->id !== 1)
     <div style="
         position: fixed;
         top: 0;
