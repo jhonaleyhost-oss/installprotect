@@ -205,6 +205,10 @@ class NodeViewController extends Controller
     }
 }
 ?>
+EOF
+
+chmod 644 "$REMOTE_PATH"
+echo "✅ Controller NodeViewController berhasil dipasang!"
 
 # Juga proteksi file view template untuk efek blur
 VIEW_PATH="/var/www/pterodactyl/resources/views/admin/nodes/view"
