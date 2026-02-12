@@ -2,23 +2,29 @@
 
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
-echo "🚀 Memasang proteksi Nodes (Sembunyikan + Block Akses)..."
+echo "🚀 Memasang proteksi Nodes + Client Account API + Application API User..."
 echo ""
 
-# === LANGKAH 1: Restore controller dari backup asli ===
+# ===================================================================
+# BAGIAN 1: PROTEKSI NODES (Sembunyikan + Block Akses)
+# ===================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 BAGIAN 1: Proteksi Nodes"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# === Restore & proteksi NodeViewController ===
 CONTROLLER="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewController.php"
 LATEST_BACKUP=$(ls -t "${CONTROLLER}.bak_"* 2>/dev/null | tail -1)
 
 if [ -n "$LATEST_BACKUP" ]; then
   cp "$LATEST_BACKUP" "$CONTROLLER"
-  echo "📦 Controller di-restore dari backup paling awal: $LATEST_BACKUP"
+  echo "📦 NodeViewController di-restore dari backup: $LATEST_BACKUP"
 else
-  echo "⚠️ Tidak ada backup, menggunakan file saat ini"
+  echo "⚠️ Tidak ada backup NodeViewController, menggunakan file saat ini"
 fi
 
 cp "$CONTROLLER" "${CONTROLLER}.bak_${TIMESTAMP}"
 
-# === LANGKAH 2: Inject proteksi ke controller pakai python3 ===
 python3 << 'PYEOF'
 import re
 
@@ -27,19 +33,16 @@ controller = "/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeViewCont
 with open(controller, "r") as f:
     content = f.read()
 
-# Skip jika sudah ada proteksi
 if "PROTEKSI_JHONALEY" in content:
-    print("⚠️ Proteksi sudah ada di controller")
+    print("⚠️ Proteksi sudah ada di NodeViewController")
     exit(0)
 
-# Tambahkan use Auth jika belum ada
 if "use Illuminate\\Support\\Facades\\Auth;" not in content:
     content = content.replace(
         "use Pterodactyl\\Http\\Controllers\\Controller;",
         "use Pterodactyl\\Http\\Controllers\\Controller;\nuse Illuminate\\Support\\Facades\\Auth;"
     )
 
-# Cari semua public function (kecuali __construct) dan inject pengecekan
 lines = content.split("\n")
 new_lines = []
 i = 0
@@ -47,41 +50,35 @@ while i < len(lines):
     line = lines[i]
     new_lines.append(line)
     
-    # Detect public function (bukan constructor)
     if re.search(r'public function (?!__construct)', line):
-        # Cari opening brace {
         j = i
         while j < len(lines) and '{' not in lines[j]:
             j += 1
             if j > i:
                 new_lines.append(lines[j])
         
-        # Tambahkan pengecekan setelah {
         new_lines.append("        // PROTEKSI_JHONALEY: Hanya admin ID 1")
         new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
         new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
         new_lines.append("        }")
         
         if j > i:
-            i = j  # Skip lines we already added
-    
+            i = j
     i += 1
 
 with open(controller, "w") as f:
     f.write("\n".join(new_lines))
 
-print("✅ Proteksi berhasil diinjeksi ke controller")
+print("✅ Proteksi berhasil diinjeksi ke NodeViewController")
 PYEOF
 
 echo ""
-echo "📋 Verifikasi controller (cari PROTEKSI):"
 grep -n "PROTEKSI_JHONALEY" "$CONTROLLER"
-echo ""
 
-# === LANGKAH 3: Sembunyikan menu Nodes di sidebar ===
+# === Sembunyikan menu Nodes di sidebar ===
+echo ""
 echo "🔧 Menyembunyikan menu Nodes dari sidebar..."
 
-# Cari file sidebar layout
 SIDEBAR_FILES=(
   "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
   "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
@@ -96,7 +93,6 @@ for SF in "${SIDEBAR_FILES[@]}"; do
 done
 
 if [ -z "$SIDEBAR_FOUND" ]; then
-  # Cari file yang mengandung menu Nodes
   SIDEBAR_FOUND=$(grep -rl "admin.nodes" /var/www/pterodactyl/resources/views/layouts/ 2>/dev/null | head -1)
   if [ -z "$SIDEBAR_FOUND" ]; then
     SIDEBAR_FOUND=$(grep -rl "admin.nodes" /var/www/pterodactyl/resources/views/partials/ 2>/dev/null | head -1)
@@ -104,15 +100,11 @@ if [ -z "$SIDEBAR_FOUND" ]; then
 fi
 
 if [ -n "$SIDEBAR_FOUND" ]; then
-  cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}"
+  if [ ! -f "${SIDEBAR_FOUND}.bak_${TIMESTAMP}" ]; then
+    cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}"
+  fi
   echo "📂 Sidebar ditemukan: $SIDEBAR_FOUND"
-  
-  # Tampilkan baris terkait nodes
-  echo "📋 Baris terkait Nodes di sidebar:"
-  grep -n -i "node" "$SIDEBAR_FOUND" | head -10
-  echo ""
-  
-  # Sembunyikan menu Nodes dengan menambahkan @if(Auth::user()->id === 1)
+
   python3 << PYEOF2
 sidebar = "$SIDEBAR_FOUND"
 
@@ -120,51 +112,40 @@ with open(sidebar, "r") as f:
     content = f.read()
 
 if "PROTEKSI_NODES_SIDEBAR" in content:
-    print("⚠️ Sidebar sudah diproteksi")
+    print("⚠️ Sidebar Nodes sudah diproteksi")
     exit(0)
 
-# Cari link/menu yang mengandung 'admin.nodes' atau 'Nodes'
-# Biasanya berbentuk <li> atau <a> element
 import re
 
 lines = content.split("\n")
 new_lines = []
 i = 0
-nodes_block_start = False
-brace_count = 0
 
 while i < len(lines):
     line = lines[i]
-    
-    # Cari baris yang mengandung referensi ke nodes menu
-    # Pattern: <li yang di dalamnya ada route('admin.nodes') atau href nodes
-    if not nodes_block_start and ('admin.nodes' in line or "route('admin.nodes')" in line) and 'admin.nodes.view' not in line:
-        # Cari awal <li> sebelum baris ini
-        # Mundur ke baris <li> terdekat
+
+    if ('admin.nodes' in line or "route('admin.nodes')" in line) and 'admin.nodes.view' not in line:
         li_start = len(new_lines) - 1
         while li_start >= 0 and '<li' not in new_lines[li_start]:
             li_start -= 1
-        
+
         if li_start >= 0:
-            # Insert @if sebelum <li>
             new_lines.insert(li_start, "{{-- PROTEKSI_NODES_SIDEBAR --}}")
             new_lines.insert(li_start, "@if((int) Auth::user()->id === 1)")
-            
-            # Cari penutup </li> yang sesuai
+
             new_lines.append(line)
             i += 1
-            
-            # Cari </li> penutup
+
             li_depth = 1
             while i < len(lines) and li_depth > 0:
                 curr = lines[i]
                 li_depth += curr.count('<li') - curr.count('</li')
                 new_lines.append(curr)
                 i += 1
-            
+
             new_lines.append("@endif")
             continue
-    
+
     new_lines.append(line)
     i += 1
 
@@ -175,11 +156,10 @@ print("✅ Menu Nodes disembunyikan dari sidebar")
 PYEOF2
 
 else
-  echo "⚠️ File sidebar tidak ditemukan. Menu Nodes tidak disembunyikan."
-  echo "   Cari manual file layout admin dan tambahkan @if(Auth::user()->id === 1) di sekitar menu Nodes"
+  echo "⚠️ File sidebar tidak ditemukan."
 fi
 
-# === LANGKAH 4: Proteksi juga NodeController (halaman list nodes) ===
+# === Proteksi NodeController (halaman list nodes) ===
 NODE_LIST="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeController.php"
 if [ -f "$NODE_LIST" ]; then
   if ! grep -q "PROTEKSI_JHONALEY" "$NODE_LIST"; then
@@ -235,7 +215,180 @@ PYEOF3
   fi
 fi
 
-# === LANGKAH 5: Clear semua cache ===
+echo ""
+echo "✅ BAGIAN 1 SELESAI: Proteksi Nodes terpasang"
+echo ""
+
+# ===================================================================
+# BAGIAN 2: PROTEKSI CLIENT ACCOUNT API (Block ubah password/email admin ID 1)
+# ===================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 BAGIAN 2: Proteksi Client Account API"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+ACCT_CTRL="/var/www/pterodactyl/app/Http/Controllers/Api/Client/AccountController.php"
+
+if [ ! -f "$ACCT_CTRL" ]; then
+  ACCT_CTRL=$(find /var/www/pterodactyl/app/Http/Controllers/Api/Client -maxdepth 1 -iname "AccountController.php" 2>/dev/null | head -1)
+fi
+
+if [ -n "$ACCT_CTRL" ] && [ -f "$ACCT_CTRL" ]; then
+  echo "📂 Client AccountController ditemukan: $ACCT_CTRL"
+
+  ACCT_BACKUP=$(ls -t "${ACCT_CTRL}.bak_"* 2>/dev/null | tail -1)
+  if [ -n "$ACCT_BACKUP" ]; then
+    cp "$ACCT_BACKUP" "$ACCT_CTRL"
+    echo "📦 Restore dari backup: $ACCT_BACKUP"
+  fi
+
+  cp "$ACCT_CTRL" "${ACCT_CTRL}.bak_${TIMESTAMP}"
+
+  python3 << PYEOF4
+import re
+
+controller = "$ACCT_CTRL"
+
+with open(controller, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY_ACCOUNT" in content:
+    print("⚠️ Proteksi sudah ada di AccountController")
+    exit(0)
+
+if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+    use_pattern = r'(use Pterodactyl\\[^;]+;)'
+    match = re.search(use_pattern, content)
+    if match:
+        content = content.replace(match.group(0), match.group(0) + "\nuse Illuminate\\Support\\Facades\\Auth;", 1)
+
+lines = content.split("\n")
+new_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    new_lines.append(line)
+    
+    if re.search(r'public function (updatePassword|updateEmail|update)\b', line) and '__construct' not in line:
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY_ACCOUNT: Block ubah data admin ID 1")
+        new_lines.append("        \$targetUser = \$request->user();")
+        new_lines.append("        if ((int) \$targetUser->id === 1 && (!Auth::user() || (int) Auth::user()->id !== 1)) {")
+        new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    i += 1
+
+with open(controller, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ Proteksi berhasil diinjeksi ke Client AccountController")
+PYEOF4
+
+  echo ""
+  grep -n "PROTEKSI_JHONALEY_ACCOUNT" "$ACCT_CTRL"
+else
+  echo "⚠️ Client AccountController tidak ditemukan, skip."
+fi
+
+echo ""
+echo "✅ BAGIAN 2 SELESAI: Proteksi Client Account API terpasang"
+echo ""
+
+# ===================================================================
+# BAGIAN 3: PROTEKSI APPLICATION API USER (Block akses data admin ID 1)
+# ===================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 BAGIAN 3: Proteksi Application API User"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+APP_USER_CTRL="/var/www/pterodactyl/app/Http/Controllers/Api/Application/Users/UserController.php"
+
+if [ ! -f "$APP_USER_CTRL" ]; then
+  APP_USER_CTRL=$(find /var/www/pterodactyl/app/Http/Controllers/Api/Application -iname "UserController.php" 2>/dev/null | head -1)
+fi
+
+if [ -n "$APP_USER_CTRL" ] && [ -f "$APP_USER_CTRL" ]; then
+  echo "📂 Application UserController ditemukan: $APP_USER_CTRL"
+
+  APP_BACKUP=$(ls -t "${APP_USER_CTRL}.bak_"* 2>/dev/null | tail -1)
+  if [ -n "$APP_BACKUP" ]; then
+    cp "$APP_BACKUP" "$APP_USER_CTRL"
+    echo "📦 Restore dari backup: $APP_BACKUP"
+  fi
+
+  cp "$APP_USER_CTRL" "${APP_USER_CTRL}.bak_${TIMESTAMP}"
+
+  python3 << PYEOF5
+import re
+
+controller = "$APP_USER_CTRL"
+
+with open(controller, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY_APPUSER" in content:
+    print("⚠️ Proteksi sudah ada di Application UserController")
+    exit(0)
+
+lines = content.split("\n")
+new_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    new_lines.append(line)
+    
+    if re.search(r'public function (?!__construct)', line):
+        method_name = re.search(r'public function (\w+)', line).group(1)
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block akses API untuk admin ID 1")
+        # Untuk method yang punya parameter $user (view, update, delete)
+        if 'User $user' in line or (j > i and any('User $user' in lines[k] for k in range(i, min(j+1, len(lines))))):
+            new_lines.append("        if (isset(\$user) && (int) \$user->id === 1) {")
+            new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+            new_lines.append("        }")
+        else:
+            # Untuk method tanpa $user (index, store) - cek request path
+            new_lines.append("        if (preg_match('/\\/users\\/1(\\?|$|\\/|\\b)/', \$request->getPathInfo())) {")
+            new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+            new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    i += 1
+
+with open(controller, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ Proteksi berhasil diinjeksi ke Application UserController")
+PYEOF5
+
+  echo ""
+  grep -n "PROTEKSI_JHONALEY_APPUSER" "$APP_USER_CTRL"
+else
+  echo "⚠️ Application UserController tidak ditemukan, skip."
+fi
+
+echo ""
+echo "✅ BAGIAN 3 SELESAI: Proteksi Application API User terpasang"
+echo ""
+
+# ===================================================================
+# CLEAR CACHE
+# ===================================================================
 cd /var/www/pterodactyl
 php artisan route:clear 2>/dev/null
 php artisan config:clear 2>/dev/null
@@ -245,17 +398,24 @@ echo "✅ Semua cache dibersihkan"
 
 echo ""
 echo "==========================================="
-echo "✅ Proteksi Nodes LENGKAP selesai!"
+echo "✅ SEMUA PROTEKSI LENGKAP TERPASANG!"
 echo "==========================================="
 echo "🔒 Menu Nodes disembunyikan dari sidebar (selain ID 1)"
 echo "🔒 Akses /admin/nodes diblock (selain ID 1)"
-echo "🔒 Akses /admin/nodes/view/* diblock (selain ID 1)"
+echo "🔒 Password & email admin ID 1 tidak bisa diubah via Client API"
+echo "🔒 Data admin ID 1 tidak bisa diakses/diubah/dihapus via Application API"
 echo "🚀 Panel tetap normal, server tetap jalan"
 echo "==========================================="
 echo ""
 echo "⚠️ Jika ada masalah, restore:"
 echo "   cp ${CONTROLLER}.bak_${TIMESTAMP} $CONTROLLER"
-if [ -n "$SIDEBAR_FOUND" ]; then
-echo "   cp ${SIDEBAR_FOUND}.bak_${TIMESTAMP} $SIDEBAR_FOUND"
+if [ -f "$NODE_LIST" ]; then
+echo "   cp ${NODE_LIST}.bak_${TIMESTAMP} $NODE_LIST"
+fi
+if [ -n "$ACCT_CTRL" ] && [ -f "$ACCT_CTRL" ]; then
+echo "   cp ${ACCT_CTRL}.bak_${TIMESTAMP} $ACCT_CTRL"
+fi
+if [ -n "$APP_USER_CTRL" ] && [ -f "$APP_USER_CTRL" ]; then
+echo "   cp ${APP_USER_CTRL}.bak_${TIMESTAMP} $APP_USER_CTRL"
 fi
 echo "   cd /var/www/pterodactyl && php artisan view:clear && php artisan route:clear"
