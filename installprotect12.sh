@@ -303,14 +303,106 @@ echo "✅ BAGIAN 2 SELESAI: Proteksi Client Account API terpasang"
 echo ""
 
 # ===================================================================
-# BAGIAN 3: PROTEKSI APPLICATION API USER via MIDDLEWARE
-# (Block akses data admin ID 1 SEBELUM validasi Form Request)
+# BAGIAN 3: PROTEKSI APPLICATION API USER
+# Strategi: Inject authorize() di Form Request + Middleware + Controller
 # ===================================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 BAGIAN 3: Proteksi Application API User (Middleware)"
+echo "📦 BAGIAN 3: Proteksi Application API User"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# === LANGKAH 3a: Buat Middleware file ===
+# === LANGKAH 3a: Proteksi via Form Request authorize() ===
+# authorize() jalan SEBELUM rules(), jadi ini paling efektif
+echo "🔧 Langkah 3a: Inject proteksi ke Form Request..."
+
+FORM_REQUEST_DIR="/var/www/pterodactyl/app/Http/Requests/Api/Application/Users"
+
+if [ -d "$FORM_REQUEST_DIR" ]; then
+  for FR_FILE in "$FORM_REQUEST_DIR"/*.php; do
+    if [ -f "$FR_FILE" ]; then
+      FR_NAME=$(basename "$FR_FILE")
+      
+      if grep -q "PROTEKSI_JHONALEY_FORMREQ" "$FR_FILE"; then
+        echo "⚠️ $FR_NAME sudah diproteksi"
+        continue
+      fi
+      
+      cp "$FR_FILE" "${FR_FILE}.bak_${TIMESTAMP}"
+      
+      python3 << PYEOF_FR
+import re
+
+fr_file = "$FR_FILE"
+fr_name = "$FR_NAME"
+
+with open(fr_file, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY_FORMREQ" in content:
+    print(f"⚠️ {fr_name} sudah diproteksi")
+    exit(0)
+
+# Cari method authorize()
+auth_pattern = r'(public function authorize\s*\(\s*\)[^{]*\{)'
+match = re.search(auth_pattern, content)
+
+if match:
+    # Inject check di awal authorize()
+    inject = '''
+        // PROTEKSI_JHONALEY_FORMREQ: Block modifikasi user ID 1
+        if (preg_match('#/api/application/users/1(?:\\\?|$|/)#', request()->getPathInfo())) {
+            if (in_array(request()->method(), ['PATCH', 'PUT', 'DELETE'])) {
+                abort(403, 'Akses ditolak - protect by Jhonaley Tech');
+            }
+        }
+'''
+    content = content.replace(match.group(1), match.group(1) + inject)
+    
+    with open(fr_file, "w") as f:
+        f.write(content)
+    print(f"✅ {fr_name} diproteksi via authorize()")
+else:
+    # Tidak ada authorize(), tambahkan method baru
+    # Cari class body
+    class_pattern = r'(class \w+[^{]*\{)'
+    class_match = re.search(class_pattern, content)
+    if class_match:
+        inject_method = '''
+
+    // PROTEKSI_JHONALEY_FORMREQ: Block modifikasi user ID 1
+    public function authorize(): bool
+    {
+        if (preg_match('#/api/application/users/1(?:\\\?|$|/)#', request()->getPathInfo())) {
+            if (in_array(request()->method(), ['PATCH', 'PUT', 'DELETE'])) {
+                abort(403, 'Akses ditolak - protect by Jhonaley Tech');
+            }
+        }
+        return true;
+    }
+'''
+        content = content.replace(class_match.group(1), class_match.group(1) + inject_method)
+        
+        with open(fr_file, "w") as f:
+            f.write(content)
+        print(f"✅ {fr_name} diproteksi (authorize() baru ditambahkan)")
+    else:
+        print(f"❌ Gagal menemukan class di {fr_name}")
+
+PYEOF_FR
+    fi
+  done
+else
+  echo "⚠️ Direktori Form Request tidak ditemukan: $FORM_REQUEST_DIR"
+  echo "🔍 Mencari Form Request..."
+  FORM_REQUEST_DIR=$(find /var/www/pterodactyl/app/Http/Requests -type d -iname "Users" -path "*/Application/*" 2>/dev/null | head -1)
+  if [ -n "$FORM_REQUEST_DIR" ]; then
+    echo "📂 Ditemukan: $FORM_REQUEST_DIR"
+    echo "⚠️ Jalankan ulang script setelah path diperbaiki"
+  fi
+fi
+
+# === LANGKAH 3b: Buat Middleware (layer tambahan) ===
+echo ""
+echo "🔧 Langkah 3b: Middleware ProtectAdminUser..."
 MIDDLEWARE_DIR="/var/www/pterodactyl/app/Http/Middleware"
 MIDDLEWARE_FILE="${MIDDLEWARE_DIR}/ProtectAdminUser.php"
 
@@ -326,15 +418,12 @@ class ProtectAdminUser
 {
     /**
      * PROTEKSI_JHONALEY_MIDDLEWARE: Block semua akses API ke User ID 1
-     * Middleware ini jalan SEBELUM Form Request validation
      */
     public function handle(Request $request, Closure $next)
     {
         $path = $request->getPathInfo();
 
-        // Cek apakah request mengarah ke /api/application/users/1
-        if (preg_match('#/api/application/users/1(\?|$|/)#', $path)) {
-            // Izinkan GET (view) tapi block PATCH/PUT/DELETE
+        if (preg_match('#/api/application/users/1(?:\?|$|/)#', $path)) {
             if (in_array($request->method(), ['PATCH', 'PUT', 'DELETE', 'POST'])) {
                 abort(403, 'Akses ditolak - protect by Jhonaley Tech');
             }
@@ -345,16 +434,15 @@ class ProtectAdminUser
 }
 MWEOF
 
-echo "✅ Middleware ProtectAdminUser dibuat: $MIDDLEWARE_FILE"
+echo "✅ Middleware ProtectAdminUser dibuat"
 
-# === LANGKAH 3b: Register middleware di Kernel.php ===
+# === LANGKAH 3c: Register middleware di Kernel.php ===
 KERNEL="/var/www/pterodactyl/app/Http/Kernel.php"
 
 if [ -f "$KERNEL" ]; then
   if ! grep -q "ProtectAdminUser" "$KERNEL"; then
     cp "$KERNEL" "${KERNEL}.bak_${TIMESTAMP}"
 
-    # Tambahkan middleware ke $middleware (global middleware) agar jalan untuk semua request
     python3 << 'PYEOF5'
 import re
 
@@ -367,8 +455,7 @@ if "ProtectAdminUser" in content:
     print("⚠️ Middleware sudah terdaftar di Kernel")
     exit(0)
 
-# Cari array $middleware dan tambahkan di akhir
-# Pattern: protected $middleware = [ ... ];
+# Cari protected $middleware array
 pattern = r'(protected \$middleware\s*=\s*\[)(.*?)(\];)'
 match = re.search(pattern, content, re.DOTALL)
 
@@ -405,7 +492,7 @@ else
   echo "❌ Kernel.php tidak ditemukan!"
 fi
 
-# === LANGKAH 3c: Juga proteksi controller (backup plan) ===
+# === LANGKAH 3d: Juga proteksi controller (backup plan) ===
 APP_USER_CTRL="/var/www/pterodactyl/app/Http/Controllers/Api/Application/Users/UserController.php"
 
 if [ ! -f "$APP_USER_CTRL" ]; then
