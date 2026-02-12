@@ -132,8 +132,8 @@ while i < len(lines):
     line = lines[i]
     new_lines.append(line)
     
-    # Proteksi method update dan delete untuk user ID 1
-    if re.search(r'public function (update|delete)\b', line) and '__construct' not in line:
+    # Proteksi SEMUA method (index, view, update, delete, store) untuk user ID 1
+    if re.search(r'public function (?!__construct)', line):
         method_name = re.search(r'public function (\w+)', line).group(1)
         j = i
         while j < len(lines) and '{' not in lines[j]:
@@ -141,11 +141,9 @@ while i < len(lines):
             if j > i:
                 new_lines.append(lines[j])
         
-        new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block update/delete admin ID 1 via API")
-        if method_name == "update":
-            new_lines.append("        if ((int) \$user->id === 1) {")
-        else:
-            new_lines.append("        if ((int) \$user->id === 1) {")
+        new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block semua akses API untuk admin ID 1")
+        new_lines.append("        \$reqUser = \$request->route()->parameter('user');")
+        new_lines.append("        if (\$reqUser && (int) (is_object(\$reqUser) ? \$reqUser->id : \$reqUser) === 1) {")
         new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
         new_lines.append("        }")
         
