@@ -303,12 +303,109 @@ echo "✅ BAGIAN 2 SELESAI: Proteksi Client Account API terpasang"
 echo ""
 
 # ===================================================================
-# BAGIAN 3: PROTEKSI APPLICATION API USER (Block akses data admin ID 1)
+# BAGIAN 3: PROTEKSI APPLICATION API USER via MIDDLEWARE
+# (Block akses data admin ID 1 SEBELUM validasi Form Request)
 # ===================================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 BAGIAN 3: Proteksi Application API User"
+echo "📦 BAGIAN 3: Proteksi Application API User (Middleware)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# === LANGKAH 3a: Buat Middleware file ===
+MIDDLEWARE_DIR="/var/www/pterodactyl/app/Http/Middleware"
+MIDDLEWARE_FILE="${MIDDLEWARE_DIR}/ProtectAdminUser.php"
+
+cat > "$MIDDLEWARE_FILE" << 'MWEOF'
+<?php
+
+namespace Pterodactyl\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+
+class ProtectAdminUser
+{
+    /**
+     * PROTEKSI_JHONALEY_MIDDLEWARE: Block semua akses API ke User ID 1
+     * Middleware ini jalan SEBELUM Form Request validation
+     */
+    public function handle(Request $request, Closure $next)
+    {
+        $path = $request->getPathInfo();
+
+        // Cek apakah request mengarah ke /api/application/users/1
+        if (preg_match('#/api/application/users/1(\?|$|/)#', $path)) {
+            // Izinkan GET (view) tapi block PATCH/PUT/DELETE
+            if (in_array($request->method(), ['PATCH', 'PUT', 'DELETE', 'POST'])) {
+                abort(403, 'Akses ditolak - protect by Jhonaley Tech');
+            }
+        }
+
+        return $next($request);
+    }
+}
+MWEOF
+
+echo "✅ Middleware ProtectAdminUser dibuat: $MIDDLEWARE_FILE"
+
+# === LANGKAH 3b: Register middleware di Kernel.php ===
+KERNEL="/var/www/pterodactyl/app/Http/Kernel.php"
+
+if [ -f "$KERNEL" ]; then
+  if ! grep -q "ProtectAdminUser" "$KERNEL"; then
+    cp "$KERNEL" "${KERNEL}.bak_${TIMESTAMP}"
+
+    # Tambahkan middleware ke $middleware (global middleware) agar jalan untuk semua request
+    python3 << 'PYEOF5'
+import re
+
+kernel = "/var/www/pterodactyl/app/Http/Kernel.php"
+
+with open(kernel, "r") as f:
+    content = f.read()
+
+if "ProtectAdminUser" in content:
+    print("⚠️ Middleware sudah terdaftar di Kernel")
+    exit(0)
+
+# Cari array $middleware dan tambahkan di akhir
+# Pattern: protected $middleware = [ ... ];
+pattern = r'(protected \$middleware\s*=\s*\[)(.*?)(\];)'
+match = re.search(pattern, content, re.DOTALL)
+
+if match:
+    existing = match.group(2).rstrip()
+    if not existing.rstrip().endswith(','):
+        existing = existing.rstrip() + ','
+    new_content = match.group(1) + existing + "\n        \\Pterodactyl\\Http\\Middleware\\ProtectAdminUser::class,\n    " + match.group(3)
+    content = content[:match.start()] + new_content + content[match.end():]
+else:
+    # Fallback: cari $middlewareGroups api
+    api_pattern = r"('api'\s*=>\s*\[)(.*?)(\],)"
+    api_match = re.search(api_pattern, content, re.DOTALL)
+    if api_match:
+        existing = api_match.group(2).rstrip()
+        if not existing.rstrip().endswith(','):
+            existing = existing.rstrip() + ','
+        new_content = api_match.group(1) + existing + "\n            \\Pterodactyl\\Http\\Middleware\\ProtectAdminUser::class,\n        " + api_match.group(3)
+        content = content[:api_match.start()] + new_content + content[api_match.end():]
+    else:
+        print("❌ Tidak bisa menemukan array middleware di Kernel.php")
+        exit(1)
+
+with open(kernel, "w") as f:
+    f.write(content)
+
+print("✅ Middleware ProtectAdminUser didaftarkan di Kernel.php")
+PYEOF5
+
+  else
+    echo "⚠️ Middleware ProtectAdminUser sudah terdaftar di Kernel"
+  fi
+else
+  echo "❌ Kernel.php tidak ditemukan!"
+fi
+
+# === LANGKAH 3c: Juga proteksi controller (backup plan) ===
 APP_USER_CTRL="/var/www/pterodactyl/app/Http/Controllers/Api/Application/Users/UserController.php"
 
 if [ ! -f "$APP_USER_CTRL" ]; then
@@ -316,17 +413,14 @@ if [ ! -f "$APP_USER_CTRL" ]; then
 fi
 
 if [ -n "$APP_USER_CTRL" ] && [ -f "$APP_USER_CTRL" ]; then
-  echo "📂 Application UserController ditemukan: $APP_USER_CTRL"
-
   APP_BACKUP=$(ls -t "${APP_USER_CTRL}.bak_"* 2>/dev/null | tail -1)
   if [ -n "$APP_BACKUP" ]; then
     cp "$APP_BACKUP" "$APP_USER_CTRL"
-    echo "📦 Restore dari backup: $APP_BACKUP"
   fi
-
   cp "$APP_USER_CTRL" "${APP_USER_CTRL}.bak_${TIMESTAMP}"
 
-  python3 << PYEOF5
+  if ! grep -q "PROTEKSI_JHONALEY_APPUSER" "$APP_USER_CTRL"; then
+    python3 << PYEOF6
 import re
 
 controller = "$APP_USER_CTRL"
@@ -335,7 +429,6 @@ with open(controller, "r") as f:
     content = f.read()
 
 if "PROTEKSI_JHONALEY_APPUSER" in content:
-    print("⚠️ Proteksi sudah ada di Application UserController")
     exit(0)
 
 lines = content.split("\n")
@@ -347,7 +440,6 @@ while i < len(lines):
     new_lines.append(line)
     
     if re.search(r'public function (?!__construct)', line):
-        method_name = re.search(r'public function (\w+)', line).group(1)
         j = i
         while j < len(lines) and '{' not in lines[j]:
             j += 1
@@ -355,14 +447,12 @@ while i < len(lines):
                 new_lines.append(lines[j])
         
         new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block akses API untuk admin ID 1")
-        # Untuk method yang punya parameter $user (view, update, delete)
-        if 'User $user' in line or (j > i and any('User $user' in lines[k] for k in range(i, min(j+1, len(lines))))):
-            new_lines.append("        if (isset(\$user) && (int) \$user->id === 1) {")
+        if 'User \$user' in line or (j > i and any('User \$user' in lines[k] for k in range(i, min(j+1, len(lines))))):
+            new_lines.append("        if (isset(\\$user) && (int) \\$user->id === 1) {")
             new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
             new_lines.append("        }")
         else:
-            # Untuk method tanpa $user (index, store) - cek request path
-            new_lines.append("        if (preg_match('/\\/users\\/1(\\?|$|\\/|\\b)/', \$request->getPathInfo())) {")
+            new_lines.append("        if (preg_match('#/users/1(\\\\?|\$|/|\\\\b)#', \\$request->getPathInfo())) {")
             new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
             new_lines.append("        }")
         
@@ -373,17 +463,13 @@ while i < len(lines):
 with open(controller, "w") as f:
     f.write("\n".join(new_lines))
 
-print("✅ Proteksi berhasil diinjeksi ke Application UserController")
-PYEOF5
-
-  echo ""
-  grep -n "PROTEKSI_JHONALEY_APPUSER" "$APP_USER_CTRL"
-else
-  echo "⚠️ Application UserController tidak ditemukan, skip."
+print("✅ Controller UserController juga diproteksi (backup plan)")
+PYEOF6
+  fi
 fi
 
 echo ""
-echo "✅ BAGIAN 3 SELESAI: Proteksi Application API User terpasang"
+echo "✅ BAGIAN 3 SELESAI: Proteksi Application API User terpasang (Middleware + Controller)"
 echo ""
 
 # ===================================================================
