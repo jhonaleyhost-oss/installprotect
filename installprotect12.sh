@@ -535,11 +535,11 @@ while i < len(lines):
         
         new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block akses API untuk admin ID 1")
         if 'User \$user' in line or (j > i and any('User \$user' in lines[k] for k in range(i, min(j+1, len(lines))))):
-            new_lines.append("        if (isset(\\$user) && (int) \\$user->id === 1) {")
+            new_lines.append("        if (isset(\$user) && (int) \$user->id === 1) {")
             new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
             new_lines.append("        }")
         else:
-            new_lines.append("        if (preg_match('#/users/1(\\\\?|\$|/|\\\\b)#', \\$request->getPathInfo())) {")
+            new_lines.append("        if (preg_match('#/users/1(\\\\?|\$|/|\\\\b)#', \$request->getPathInfo())) {")
             new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
             new_lines.append("        }")
         
