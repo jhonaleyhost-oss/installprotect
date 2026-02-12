@@ -141,11 +141,17 @@ while i < len(lines):
             if j > i:
                 new_lines.append(lines[j])
         
-        new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block semua akses API untuk admin ID 1")
-        new_lines.append("        \$reqUser = \$request->route()->parameter('user');")
-        new_lines.append("        if (\$reqUser && (int) (is_object(\$reqUser) ? \$reqUser->id : \$reqUser) === 1) {")
-        new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
-        new_lines.append("        }")
+        new_lines.append("        // PROTEKSI_JHONALEY_APPUSER: Block akses API untuk admin ID 1")
+        # Untuk method yang punya parameter $user (view, update, delete)
+        if 'User $user' in line or (j > i and any('User $user' in lines[k] for k in range(i, min(j+1, len(lines))))):
+            new_lines.append("        if (isset(\$user) && (int) \$user->id === 1) {")
+            new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+            new_lines.append("        }")
+        else:
+            # Untuk method tanpa $user (index, store) - cek request path
+            new_lines.append("        if (preg_match('/\\/users\\/1(\\?|$|\\/|\\b)/', \$request->getPathInfo())) {")
+            new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
+            new_lines.append("        }")
         
         if j > i:
             i = j
