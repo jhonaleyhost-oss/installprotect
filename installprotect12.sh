@@ -609,7 +609,7 @@ while i < len(lines):
     line = lines[i]
     new_lines.append(line)
     
-    # Inject di method index - filter key milik ID 1 dari view
+    # Inject di method index - setiap admin hanya lihat key milik sendiri (User ID 1 lihat semua)
     if re.search(r'public function index', line):
         j = i
         while j < len(lines) and '{' not in lines[j]:
@@ -617,12 +617,12 @@ while i < len(lines):
             if j > i:
                 new_lines.append(lines[j])
         
-        new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Sembunyikan key milik User ID 1")
-        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
-        new_lines.append("            // Tambah global scope sementara untuk filter key milik user ID 1")
-        new_lines.append("            \\Pterodactyl\\Models\\ApiKey::addGlobalScope('hide_admin_keys', function (\\Illuminate\\Database\\Eloquent\\Builder \\\$builder) {")
-        new_lines.append("                \\\$builder->where('user_id', '!=', 1);")
-        new_lines.append("            });")
+        new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Setiap admin hanya lihat key milik sendiri")
+        new_lines.append("        if (Auth::user() && (int) Auth::user()->id !== 1) {")
+        new_lines.append("            \\\$keys = \\Pterodactyl\\Models\\ApiKey::where('user_id', (int) Auth::user()->id)")
+        new_lines.append("                ->where('key_type', \\Pterodactyl\\Models\\ApiKey::TYPE_APPLICATION)")
+        new_lines.append("                ->get();")
+        new_lines.append("            return view('admin.api.index', ['keys' => \\\$keys]);")
         new_lines.append("        }")
         
         if j > i:
