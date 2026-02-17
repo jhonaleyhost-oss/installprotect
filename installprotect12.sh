@@ -568,20 +568,20 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 API_CTRL="/var/www/pterodactyl/app/Http/Controllers/Admin/ApiController.php"
 
-if [ ! -f "\$API_CTRL" ]; then
-  API_CTRL=\$(find /var/www/pterodactyl/app/Http/Controllers/Admin -maxdepth 1 -iname "*api*" -name "*.php" 2>/dev/null | head -1)
+if [ ! -f "$API_CTRL" ]; then
+  API_CTRL=$(find /var/www/pterodactyl/app/Http/Controllers/Admin -maxdepth 1 -iname "*api*" -name "*.php" 2>/dev/null | head -1)
 fi
 
-if [ -n "\$API_CTRL" ] && [ -f "\$API_CTRL" ]; then
-  echo "📂 ApiController ditemukan: \$API_CTRL"
+if [ -n "$API_CTRL" ] && [ -f "$API_CTRL" ]; then
+  echo "📂 ApiController ditemukan: $API_CTRL"
 
-  API_BACKUP=\$(ls -t "\${API_CTRL}.bak_"* 2>/dev/null | tail -1)
-  if [ -n "\$API_BACKUP" ]; then
-    cp "\$API_BACKUP" "\$API_CTRL"
-    echo "📦 Restore dari backup: \$API_BACKUP"
+  API_BACKUP=$(ls -t "${API_CTRL}.bak_"* 2>/dev/null | tail -1)
+  if [ -n "$API_BACKUP" ]; then
+    cp "$API_BACKUP" "$API_CTRL"
+    echo "📦 Restore dari backup: $API_BACKUP"
   fi
 
-  cp "\$API_CTRL" "\${API_CTRL}.bak_\${TIMESTAMP}"
+  cp "$API_CTRL" "${API_CTRL}.bak_${TIMESTAMP}"
 
   python3 << PYEOF7
 import re
@@ -677,7 +677,7 @@ print("✅ Proteksi API key berhasil diinjeksi ke ApiController")
 PYEOF7
 
   echo ""
-  grep -n "PROTEKSI_JHONALEY_APIKEY" "\$API_CTRL"
+  grep -n "PROTEKSI_JHONALEY_APIKEY" "$API_CTRL"
 else
   echo "⚠️ ApiController tidak ditemukan, skip."
 fi
@@ -685,6 +685,95 @@ fi
 echo ""
 echo "✅ BAGIAN 4 SELESAI: Proteksi API key terpasang"
 echo ""
+
+# ===================================================================
+# ===================================================================
+# PROTEKSI BLADE VIEW: API INDEX - filter key per admin
+# ===================================================================
+API_BLADE="/var/www/pterodactyl/resources/views/admin/api/index.blade.php"
+
+if [ ! -f "$API_BLADE" ]; then
+  API_BLADE=$(find /var/www/pterodactyl/resources/views/admin -path "*/api/index*" -name "*.blade.php" 2>/dev/null | head -1)
+fi
+
+if [ -n "$API_BLADE" ] && [ -f "$API_BLADE" ]; then
+  echo "📂 API Blade view ditemukan: $API_BLADE"
+
+  API_BLADE_BACKUP=$(ls -t "${API_BLADE}.bak_"* 2>/dev/null | tail -1)
+  if [ -n "$API_BLADE_BACKUP" ]; then
+    cp "$API_BLADE_BACKUP" "$API_BLADE"
+    echo "📦 Restore dari backup: $API_BLADE_BACKUP"
+  fi
+
+  cp "$API_BLADE" "${API_BLADE}.bak_${TIMESTAMP}"
+
+  python3 << PYEOF_BLADE
+import re
+
+blade_file = "\$API_BLADE"
+
+with open(blade_file, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY_APIKEY_BLADE" in content:
+    print("⚠️ Proteksi Blade sudah ada")
+    exit(0)
+
+# Cari loop @foreach yang menampilkan keys
+# Biasanya: @foreach($keys as $key) atau serupa
+foreach_pattern = r'(@foreach\s*\(\s*\\\$\w+\s+as\s+\\\$(\w+)\s*\))'
+match = re.search(foreach_pattern, content)
+
+if match:
+    original_foreach = match.group(0)
+    var_name = match.group(2)
+    
+    # Tambahkan filter PHP sebelum foreach
+    filter_code = """
+{{-- PROTEKSI_JHONALEY_APIKEY_BLADE: Setiap admin hanya lihat key sendiri --}}
+@php
+    \\\$__currentUserId = (int) Auth::user()->id;
+    if (\\\$__currentUserId !== 1) {
+        \\\$keys = \\\$keys->filter(function(\\\$item) use (\\\$__currentUserId) {
+            return (int) \\\$item->user_id === \\\$__currentUserId;
+        });
+    }
+@endphp
+""" + original_foreach
+    
+    content = content.replace(original_foreach, filter_code, 1)
+    
+    with open(blade_file, "w") as f:
+        f.write(content)
+    print("✅ Proteksi Blade view API berhasil diterapkan")
+else:
+    # Fallback: cari pola @foreach generik
+    foreach_generic = re.search(r'(@foreach\s*\([^)]+\))', content)
+    if foreach_generic:
+        original = foreach_generic.group(0)
+        filter_code = """
+{{-- PROTEKSI_JHONALEY_APIKEY_BLADE: Setiap admin hanya lihat key sendiri --}}
+@php
+    \\\$__currentUserId = (int) Auth::user()->id;
+    if (\\\$__currentUserId !== 1) {
+        \\\$keys = isset(\\\$keys) ? \\\$keys->filter(function(\\\$item) use (\\\$__currentUserId) {
+            return (int) (\\\$item->user_id ?? 0) === \\\$__currentUserId;
+        }) : collect([]);
+    }
+@endphp
+""" + original
+        content = content.replace(original, filter_code, 1)
+        
+        with open(blade_file, "w") as f:
+            f.write(content)
+        print("✅ Proteksi Blade view API (fallback) berhasil diterapkan")
+    else:
+        print("⚠️ Tidak menemukan @foreach di Blade view")
+
+PYEOF_BLADE
+else
+  echo "⚠️ Blade view API tidak ditemukan"
+fi
 
 # ===================================================================
 # CLEAR CACHE
