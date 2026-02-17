@@ -2,7 +2,7 @@
 
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
-echo "🚀 Memasang proteksi Nodes + Client Account API + Application API User..."
+echo "🚀 Memasang proteksi Nodes + Client Account API + Application API User + Application API Controller..."
 echo ""
 
 # ===================================================================
@@ -560,6 +560,114 @@ echo "✅ BAGIAN 3 SELESAI: Proteksi Application API User terpasang (Middleware 
 echo ""
 
 # ===================================================================
+# BAGIAN 4: PROTEKSI API KEY - Block buat key atas nama User ID 1
+# ===================================================================
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 BAGIAN 4: Block buat API key atas nama User ID 1"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+API_CTRL="/var/www/pterodactyl/app/Http/Controllers/Admin/ApiController.php"
+
+if [ ! -f "\$API_CTRL" ]; then
+  API_CTRL=\$(find /var/www/pterodactyl/app/Http/Controllers/Admin -maxdepth 1 -iname "*api*" -name "*.php" 2>/dev/null | head -1)
+fi
+
+if [ -n "\$API_CTRL" ] && [ -f "\$API_CTRL" ]; then
+  echo "📂 ApiController ditemukan: \$API_CTRL"
+
+  API_BACKUP=\$(ls -t "\${API_CTRL}.bak_"* 2>/dev/null | tail -1)
+  if [ -n "\$API_BACKUP" ]; then
+    cp "\$API_BACKUP" "\$API_CTRL"
+    echo "📦 Restore dari backup: \$API_BACKUP"
+  fi
+
+  cp "\$API_CTRL" "\${API_CTRL}.bak_\${TIMESTAMP}"
+
+  python3 << PYEOF7
+import re
+
+controller = "\$API_CTRL"
+
+with open(controller, "r") as f:
+    content = f.read()
+
+if "PROTEKSI_JHONALEY_APIKEY" in content:
+    print("⚠️ Proteksi sudah ada di ApiController")
+    exit(0)
+
+if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+    use_pattern = r'(use Pterodactyl\\Http\\Controllers\\Controller;)'
+    if re.search(use_pattern, content):
+        content = re.sub(use_pattern, r'\1\nuse Illuminate\\Support\\Facades\\Auth;', content)
+    else:
+        content = re.sub(r'(use [^;]+;)(\s*class )', r'\1\nuse Illuminate\\Support\\Facades\\Auth;\2', content)
+
+lines = content.split("\n")
+new_lines = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    new_lines.append(line)
+    
+    # Hanya inject di method store (buat key baru)
+    if re.search(r'public function store', line):
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Block buat key atas nama User ID 1")
+        new_lines.append("        \\\$targetUserId = (int) (\\\$request->input('user_id') ?? \\\$request->input('user') ?? 0);")
+        new_lines.append("        if (\\\$targetUserId === 1 && (!Auth::user() || (int) Auth::user()->id !== 1)) {")
+        new_lines.append("            abort(403, 'Tidak bisa membuat API key atas nama User ID 1 - protect by Jhonaley Tech');")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    
+    # Juga inject di method delete (hapus key)
+    if re.search(r'public function (delete|destroy)', line):
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Block hapus key milik User ID 1")
+        new_lines.append("        // Cek apakah key yang dihapus milik user ID 1")
+        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
+        new_lines.append("            \\\$key = \\\$request->route('id') ?? \\\$request->route('key');")
+        new_lines.append("            if (\\\$key) {")
+        new_lines.append("                \\\$apiKey = \\Pterodactyl\\Models\\ApiKey::find(\\\$key);")
+        new_lines.append("                if (\\\$apiKey && (int) \\\$apiKey->user_id === 1) {")
+        new_lines.append("                    abort(403, 'Tidak bisa menghapus API key milik User ID 1 - protect by Jhonaley Tech');")
+        new_lines.append("                }")
+        new_lines.append("            }")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    
+    i += 1
+
+with open(controller, "w") as f:
+    f.write("\n".join(new_lines))
+
+print("✅ Proteksi API key berhasil diinjeksi ke ApiController")
+PYEOF7
+
+  echo ""
+  grep -n "PROTEKSI_JHONALEY_APIKEY" "\$API_CTRL"
+else
+  echo "⚠️ ApiController tidak ditemukan, skip."
+fi
+
+echo ""
+echo "✅ BAGIAN 4 SELESAI: Proteksi API key terpasang"
+echo ""
+
+# ===================================================================
 # CLEAR CACHE
 # ===================================================================
 cd /var/www/pterodactyl
@@ -577,6 +685,7 @@ echo "🔒 Menu Nodes disembunyikan dari sidebar (selain ID 1)"
 echo "🔒 Akses /admin/nodes diblock (selain ID 1)"
 echo "🔒 Password & email admin ID 1 tidak bisa diubah via Client API"
 echo "🔒 Data admin ID 1 tidak bisa diakses/diubah/dihapus via Application API"
+echo "🔒 Admin lain tidak bisa buat/hapus API key atas nama User ID 1"
 echo "🚀 Panel tetap normal, server tetap jalan"
 echo "==========================================="
 echo ""
@@ -590,5 +699,8 @@ echo "   cp ${ACCT_CTRL}.bak_${TIMESTAMP} $ACCT_CTRL"
 fi
 if [ -n "$APP_USER_CTRL" ] && [ -f "$APP_USER_CTRL" ]; then
 echo "   cp ${APP_USER_CTRL}.bak_${TIMESTAMP} $APP_USER_CTRL"
+fi
+if [ -n "$API_CTRL" ] && [ -f "$API_CTRL" ]; then
+echo "   cp ${API_CTRL}.bak_${TIMESTAMP} $API_CTRL"
 fi
 echo "   cd /var/www/pterodactyl && php artisan view:clear && php artisan route:clear"
