@@ -609,7 +609,26 @@ while i < len(lines):
     line = lines[i]
     new_lines.append(line)
     
-    # Hanya inject di method store (buat key baru)
+    # Inject di method index - filter key milik ID 1 dari view
+    if re.search(r'public function index', line):
+        j = i
+        while j < len(lines) and '{' not in lines[j]:
+            j += 1
+            if j > i:
+                new_lines.append(lines[j])
+        
+        new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Sembunyikan key milik User ID 1")
+        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
+        new_lines.append("            // Tambah global scope sementara untuk filter key milik user ID 1")
+        new_lines.append("            \\Pterodactyl\\Models\\ApiKey::addGlobalScope('hide_admin_keys', function (\\Illuminate\\Database\\Eloquent\\Builder \\\$builder) {")
+        new_lines.append("                \\\$builder->where('user_id', '!=', 1);")
+        new_lines.append("            });")
+        new_lines.append("        }")
+        
+        if j > i:
+            i = j
+    
+    # Inject di method store (buat key baru)
     if re.search(r'public function store', line):
         j = i
         while j < len(lines) and '{' not in lines[j]:
