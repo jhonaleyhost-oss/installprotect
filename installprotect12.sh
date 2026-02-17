@@ -583,10 +583,12 @@ if [ -n "$API_CTRL" ] && [ -f "$API_CTRL" ]; then
 
   cp "$API_CTRL" "${API_CTRL}.bak_${TIMESTAMP}"
 
-  python3 << PYEOF7
+  export API_CTRL_PATH="$API_CTRL"
+  python3 << 'PYEOF7'
 import re
+import os
 
-controller = "$API_CTRL"
+controller = os.environ["API_CTRL_PATH"]
 
 with open(controller, "r") as f:
     content = f.read()
@@ -595,8 +597,8 @@ if "PROTEKSI_JHONALEY_APIKEY" in content:
     print("⚠️ Proteksi sudah ada di ApiController")
     exit(0)
 
-if r"use Illuminate\Support\Facades\Auth;" not in content:
-    use_pattern = r'(use Pterodactyl\\Http\\Controllers\\Controller;)'
+if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+    use_pattern = r'(use Pterodactyl\\\\Http\\\\Controllers\\\\Controller;)'
     if re.search(use_pattern, content):
         content = re.sub(use_pattern, r'\1\nuse Illuminate\\Support\\Facades\\Auth;', content)
     else:
@@ -609,7 +611,7 @@ while i < len(lines):
     line = lines[i]
     new_lines.append(line)
     
-    # Inject di method index - setiap admin hanya lihat key milik sendiri (User ID 1 lihat semua)
+    # Inject di method index
     if re.search(r'public function index', line):
         j = i
         while j < len(lines) and '{' not in lines[j]:
@@ -619,16 +621,16 @@ while i < len(lines):
         
         new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Setiap admin hanya lihat key milik sendiri")
         new_lines.append("        if (Auth::user() && (int) Auth::user()->id !== 1) {")
-        new_lines.append("            \\\$keys = \\Pterodactyl\\Models\\ApiKey::where('user_id', (int) Auth::user()->id)")
+        new_lines.append("            $keys = \\Pterodactyl\\Models\\ApiKey::where('user_id', (int) Auth::user()->id)")
         new_lines.append("                ->where('key_type', \\Pterodactyl\\Models\\ApiKey::TYPE_APPLICATION)")
         new_lines.append("                ->get();")
-        new_lines.append("            return view('admin.api.index', ['keys' => \\\$keys]);")
+        new_lines.append("            return view('admin.api.index', ['keys' => $keys]);")
         new_lines.append("        }")
         
         if j > i:
             i = j
     
-    # Inject di method store (buat key baru)
+    # Inject di method store
     if re.search(r'public function store', line):
         j = i
         while j < len(lines) and '{' not in lines[j]:
@@ -637,15 +639,15 @@ while i < len(lines):
                 new_lines.append(lines[j])
         
         new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Block buat key atas nama User ID 1")
-        new_lines.append("        \\\$targetUserId = (int) (\\\$request->input('user_id') ?? \\\$request->input('user') ?? 0);")
-        new_lines.append("        if (\\\$targetUserId === 1 && (!Auth::user() || (int) Auth::user()->id !== 1)) {")
+        new_lines.append("        $targetUserId = (int) ($request->input('user_id') ?? $request->input('user') ?? 0);")
+        new_lines.append("        if ($targetUserId === 1 && (!Auth::user() || (int) Auth::user()->id !== 1)) {")
         new_lines.append("            abort(403, 'Tidak bisa membuat API key atas nama User ID 1 - protect by Jhonaley Tech');")
         new_lines.append("        }")
         
         if j > i:
             i = j
     
-    # Juga inject di method delete (hapus key)
+    # Inject di method delete/destroy
     if re.search(r'public function (delete|destroy)', line):
         j = i
         while j < len(lines) and '{' not in lines[j]:
@@ -654,12 +656,11 @@ while i < len(lines):
                 new_lines.append(lines[j])
         
         new_lines.append("        // PROTEKSI_JHONALEY_APIKEY: Block hapus key milik User ID 1")
-        new_lines.append("        // Cek apakah key yang dihapus milik user ID 1")
         new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
-        new_lines.append("            \\\$key = \\\$request->route('id') ?? \\\$request->route('key');")
-        new_lines.append("            if (\\\$key) {")
-        new_lines.append("                \\\$apiKey = \\Pterodactyl\\Models\\ApiKey::find(\\\$key);")
-        new_lines.append("                if (\\\$apiKey && (int) \\\$apiKey->user_id === 1) {")
+        new_lines.append("            $key = $request->route('id') ?? $request->route('key');")
+        new_lines.append("            if ($key) {")
+        new_lines.append("                $apiKey = \\Pterodactyl\\Models\\ApiKey::find($key);")
+        new_lines.append("                if ($apiKey && (int) $apiKey->user_id === 1) {")
         new_lines.append("                    abort(403, 'Tidak bisa menghapus API key milik User ID 1 - protect by Jhonaley Tech');")
         new_lines.append("                }")
         new_lines.append("            }")
@@ -707,10 +708,12 @@ if [ -n "$API_BLADE" ] && [ -f "$API_BLADE" ]; then
 
   cp "$API_BLADE" "${API_BLADE}.bak_${TIMESTAMP}"
 
-  python3 << PYEOF_BLADE
+  export API_BLADE_PATH="$API_BLADE"
+  python3 << 'PYEOF_BLADE'
 import re
+import os
 
-blade_file = "$API_BLADE"
+blade_file = os.environ["API_BLADE_PATH"]
 
 with open(blade_file, "r") as f:
     content = f.read()
@@ -720,22 +723,19 @@ if "PROTEKSI_JHONALEY_APIKEY_BLADE" in content:
     exit(0)
 
 # Cari loop @foreach yang menampilkan keys
-# Biasanya: @foreach($keys as $key) atau serupa
-foreach_pattern = r'(@foreach\s*\(\s*\\\$\w+\s+as\s+\\\$(\w+)\s*\))'
+foreach_pattern = r'(@foreach\s*\(\s*\$\w+\s+as\s+\$(\w+)\s*\))'
 match = re.search(foreach_pattern, content)
 
 if match:
     original_foreach = match.group(0)
-    var_name = match.group(2)
     
-    # Tambahkan filter PHP sebelum foreach
     filter_code = """
 {{-- PROTEKSI_JHONALEY_APIKEY_BLADE: Setiap admin hanya lihat key sendiri --}}
 @php
-    \\\$__currentUserId = (int) Auth::user()->id;
-    if (\\\$__currentUserId !== 1) {
-        \\\$keys = \\\$keys->filter(function(\\\$item) use (\\\$__currentUserId) {
-            return (int) \\\$item->user_id === \\\$__currentUserId;
+    $__currentUserId = (int) Auth::user()->id;
+    if ($__currentUserId !== 1) {
+        $keys = $keys->filter(function($item) use ($__currentUserId) {
+            return (int) $item->user_id === $__currentUserId;
         });
     }
 @endphp
@@ -747,17 +747,16 @@ if match:
         f.write(content)
     print("✅ Proteksi Blade view API berhasil diterapkan")
 else:
-    # Fallback: cari pola @foreach generik
     foreach_generic = re.search(r'(@foreach\s*\([^)]+\))', content)
     if foreach_generic:
         original = foreach_generic.group(0)
         filter_code = """
 {{-- PROTEKSI_JHONALEY_APIKEY_BLADE: Setiap admin hanya lihat key sendiri --}}
 @php
-    \\\$__currentUserId = (int) Auth::user()->id;
-    if (\\\$__currentUserId !== 1) {
-        \\\$keys = isset(\\\$keys) ? \\\$keys->filter(function(\\\$item) use (\\\$__currentUserId) {
-            return (int) (\\\$item->user_id ?? 0) === \\\$__currentUserId;
+    $__currentUserId = (int) Auth::user()->id;
+    if ($__currentUserId !== 1) {
+        $keys = isset($keys) ? $keys->filter(function($item) use ($__currentUserId) {
+            return (int) ($item->user_id ?? 0) === $__currentUserId;
         }) : collect([]);
     }
 @endphp
