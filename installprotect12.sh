@@ -586,7 +586,7 @@ if [ -n "$API_CTRL" ] && [ -f "$API_CTRL" ]; then
   python3 << PYEOF7
 import re
 
-controller = "\$API_CTRL"
+controller = "$API_CTRL"
 
 with open(controller, "r") as f:
     content = f.read()
@@ -595,7 +595,7 @@ if "PROTEKSI_JHONALEY_APIKEY" in content:
     print("⚠️ Proteksi sudah ada di ApiController")
     exit(0)
 
-if "use Illuminate\\Support\\Facades\\Auth;" not in content:
+if r"use Illuminate\Support\Facades\Auth;" not in content:
     use_pattern = r'(use Pterodactyl\\Http\\Controllers\\Controller;)'
     if re.search(use_pattern, content):
         content = re.sub(use_pattern, r'\1\nuse Illuminate\\Support\\Facades\\Auth;', content)
@@ -710,7 +710,7 @@ if [ -n "$API_BLADE" ] && [ -f "$API_BLADE" ]; then
   python3 << PYEOF_BLADE
 import re
 
-blade_file = "\$API_BLADE"
+blade_file = "$API_BLADE"
 
 with open(blade_file, "r") as f:
     content = f.read()
