@@ -47,6 +47,7 @@ if [ -n "$SIDEBAR_FILE" ] && [ -f "$SIDEBAR_FILE" ]; then
         echo "⚠️ Proteksi menu Application API sudah ada, skip..."
     else
         # Gunakan Python untuk inject proteksi
+        export SIDEBAR_FILE_PATH="$SIDEBAR_FILE"
         python3 << 'PYEOF1'
 import re
 import os
@@ -135,7 +136,6 @@ else:
     print("WARN: Tidak menemukan menu Application API di sidebar")
 
 PYEOF1
-        export SIDEBAR_FILE_PATH="$SIDEBAR_FILE"
         echo "✅ Bagian 1 selesai"
     fi
 fi
@@ -161,6 +161,7 @@ else
         echo "⚠️ Proteksi block sudah ada, skip..."
     else
         # Inject proteksi di constructor atau awal method index
+        export API_CONTROLLER_PATH="$API_CONTROLLER"
         python3 << 'PYEOF2'
 import re
 import os
@@ -217,7 +218,6 @@ with open(controller_file, "w") as f:
 print("Proteksi akses Application API Controller berhasil diinjeksi")
 
 PYEOF2
-        export API_CONTROLLER_PATH="$API_CONTROLLER"
         echo "✅ Bagian 2 selesai"
     fi
 fi
@@ -285,6 +285,7 @@ if [ -f "$ADMIN_ROUTE" ]; then
     else
         cp "$ADMIN_ROUTE" "${ADMIN_ROUTE}.bak_${TIMESTAMP}"
         # Cari route group untuk api dan tambahkan middleware
+        export ADMIN_ROUTE_PATH="$ADMIN_ROUTE"
         python3 << 'PYEOF3'
 import re
 import os
@@ -347,7 +348,6 @@ else:
     print("WARN: Tidak menemukan route api di admin routes")
 
 PYEOF3
-        export ADMIN_ROUTE_PATH="$ADMIN_ROUTE"
         echo "✅ Bagian 3 selesai"
     fi
 else
