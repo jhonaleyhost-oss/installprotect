@@ -1,204 +1,160 @@
 #!/bin/bash
+###############################################
+# INSTALLPROTECT13.SH
+# Menghilangkan kolom "ptla" di Application API
+###############################################
 
-TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
+set -e
 
-echo "🚀 Memasang proteksi Application API (Sembunyikan + Block Akses)..."
-echo ""
+echo "==========================================="
+echo "🔒 INSTALLPROTECT13: Hilangkan kolom ptla"
+echo "    di halaman Application API"
+echo "==========================================="
 
-# === LANGKAH 1: Restore ApplicationApiController dari backup asli ===
-CONTROLLER="/var/www/pterodactyl/app/Http/Controllers/Admin/ApiController.php"
+# Cari blade view Application API
+API_BLADE="/var/www/pterodactyl/resources/views/admin/api/index.blade.php"
 
-# Cari file controller yang tepat
-if [ ! -f "$CONTROLLER" ]; then
-  CONTROLLER=$(find /var/www/pterodactyl/app/Http/Controllers/Admin -maxdepth 1 -iname "*api*" -name "*.php" 2>/dev/null | head -1)
+if [ ! -f "$API_BLADE" ]; then
+    echo "❌ File tidak ditemukan: $API_BLADE"
+    exit 1
 fi
 
-if [ -z "$CONTROLLER" ] || [ ! -f "$CONTROLLER" ]; then
-  echo "❌ Controller Application API tidak ditemukan!"
-  echo "   Mencari di direktori Admin..."
-  find /var/www/pterodactyl/app/Http/Controllers/Admin -maxdepth 2 -name "*.php" | grep -i api
-  exit 1
-fi
+# Backup
+TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
+cp "$API_BLADE" "${API_BLADE}.bak_${TIMESTAMP}"
+echo "✅ Backup dibuat: ${API_BLADE}.bak_${TIMESTAMP}"
 
-echo "📂 Controller ditemukan: $CONTROLLER"
+# Inject CSS untuk menyembunyikan kolom ptla via Python
+export TARGET_FILE="$API_BLADE"
 
-LATEST_BACKUP=$(ls -t "${CONTROLLER}.bak_"* 2>/dev/null | tail -1)
+python3 << 'PYEOF'
+import os
 
-if [ -n "$LATEST_BACKUP" ]; then
-  cp "$LATEST_BACKUP" "$CONTROLLER"
-  echo "📦 Controller di-restore dari backup paling awal: $LATEST_BACKUP"
-else
-  echo "⚠️ Tidak ada backup, menggunakan file saat ini"
-fi
+target = os.environ["TARGET_FILE"]
 
-cp "$CONTROLLER" "${CONTROLLER}.bak_${TIMESTAMP}"
-
-# === LANGKAH 2: Inject proteksi ke ApiController ===
-python3 << PYEOF
-import re
-
-controller = "$CONTROLLER"
-
-with open(controller, "r") as f:
+with open(target, "r") as f:
     content = f.read()
 
-if "PROTEKSI_JHONALEY" in content:
-    print("⚠️ Proteksi sudah ada di ApiController")
-    exit(0)
-
-if "use Illuminate\\Support\\Facades\\Auth;" not in content:
-    # Cari use statement yang ada untuk inject setelahnya
-    use_pattern = r'(use Pterodactyl\\Http\\Controllers\\Controller;)'
-    if re.search(use_pattern, content):
-        content = re.sub(use_pattern, r'\1\nuse Illuminate\\Support\\Facades\\Auth;', content)
-    else:
-        # Fallback: cari use statement terakhir
-        content = re.sub(r'(use [^;]+;)(\s*class )', r'\1\nuse Illuminate\\Support\\Facades\\Auth;\2', content)
-
-lines = content.split("\n")
-new_lines = []
-i = 0
-while i < len(lines):
-    line = lines[i]
-    new_lines.append(line)
-    
-    if re.search(r'public function (?!__construct)', line):
-        j = i
-        while j < len(lines) and '{' not in lines[j]:
-            j += 1
-            if j > i:
-                new_lines.append(lines[j])
-        
-        new_lines.append("        // PROTEKSI_JHONALEY: Hanya admin ID 1")
-        new_lines.append("        if (!Auth::user() || (int) Auth::user()->id !== 1) {")
-        new_lines.append("            abort(403, 'Akses ditolak - protect by Jhonaley Tech');")
-        new_lines.append("        }")
-        
-        if j > i:
-            i = j
-    i += 1
-
-with open(controller, "w") as f:
-    f.write("\n".join(new_lines))
-
-print("✅ Proteksi berhasil diinjeksi ke ApiController")
-PYEOF
-
-echo ""
-echo "📋 Verifikasi ApiController (cari PROTEKSI):"
-grep -n "PROTEKSI_JHONALEY" "$CONTROLLER"
-echo ""
-
-# === LANGKAH 3: Sembunyikan menu Application API di sidebar ===
-echo "🔧 Menyembunyikan menu Application API dari sidebar..."
-
-SIDEBAR_FILES=(
-  "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
-  "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
+# Hapus proteksi lama jika ada
+import re
+content = re.sub(
+    r'<!-- PROTEKSI_JHONALEY_HIDE_PTLA_START -->.*?<!-- PROTEKSI_JHONALEY_HIDE_PTLA_END -->',
+    '',
+    content,
+    flags=re.DOTALL
 )
 
-SIDEBAR_FOUND=""
-for SF in "${SIDEBAR_FILES[@]}"; do
-  if [ -f "$SF" ]; then
-    SIDEBAR_FOUND="$SF"
-    break
-  fi
-done
+# Cara 1: Sembunyikan via CSS - inject style di awal file
+# Ini menyembunyikan sel tabel yang berisi "ptla"
+hide_css = """<!-- PROTEKSI_JHONALEY_HIDE_PTLA_START -->
+<style>
+    /* Sembunyikan kolom ptla di tabel Application API */
+    .ptla-hidden { display: none !important; }
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Cari semua sel tabel yang berisi teks "ptla"
+    var tables = document.querySelectorAll('table');
+    tables.forEach(function(table) {
+        var headers = table.querySelectorAll('th');
+        var ptlaIndex = -1;
 
-if [ -z "$SIDEBAR_FOUND" ]; then
-  SIDEBAR_FOUND=$(grep -rl "admin.api" /var/www/pterodactyl/resources/views/layouts/ 2>/dev/null | head -1)
-  if [ -z "$SIDEBAR_FOUND" ]; then
-    SIDEBAR_FOUND=$(grep -rl "admin.api" /var/www/pterodactyl/resources/views/partials/ 2>/dev/null | head -1)
-  fi
-fi
+        // Cari index kolom ptla
+        headers.forEach(function(th, index) {
+            if (th.textContent.trim().toLowerCase() === 'ptla' ||
+                th.textContent.trim().toLowerCase().indexOf('ptla') !== -1) {
+                ptlaIndex = index;
+                th.style.display = 'none';
+            }
+        });
 
-if [ -n "$SIDEBAR_FOUND" ]; then
-  if [ ! -f "${SIDEBAR_FOUND}.bak_${TIMESTAMP}" ]; then
-    cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}"
-  fi
-  echo "📂 Sidebar ditemukan: $SIDEBAR_FOUND"
+        // Sembunyikan semua sel di kolom tersebut
+        if (ptlaIndex !== -1) {
+            var rows = table.querySelectorAll('tr');
+            rows.forEach(function(row) {
+                var cells = row.querySelectorAll('td, th');
+                if (cells[ptlaIndex]) {
+                    cells[ptlaIndex].style.display = 'none';
+                }
+            });
+        }
+    });
 
-  echo "📋 Baris terkait API di sidebar:"
-  grep -n -i "api" "$SIDEBAR_FOUND" | grep -i "application\|admin.api" | head -10
-  echo ""
+    // Juga sembunyikan elemen apapun dengan teks/kelas ptla
+    var allElements = document.querySelectorAll('td, span, div, code');
+    allElements.forEach(function(el) {
+        var text = el.textContent.trim();
+        if (text === 'ptla' && el.tagName === 'TD') {
+            el.style.display = 'none';
+            // Sembunyikan juga header kolom yang sejajar
+            var cellIndex = el.cellIndex;
+            if (cellIndex !== undefined) {
+                var table = el.closest('table');
+                if (table) {
+                    var headerRow = table.querySelector('thead tr, tr:first-child');
+                    if (headerRow) {
+                        var headerCells = headerRow.querySelectorAll('th, td');
+                        if (headerCells[cellIndex]) {
+                            headerCells[cellIndex].style.display = 'none';
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+<!-- PROTEKSI_JHONALEY_HIDE_PTLA_END -->
+"""
 
-  python3 << PYEOF2
-sidebar = "$SIDEBAR_FOUND"
+# Cara 2: Juga coba hapus langsung kolom ptla dari HTML jika ada pattern yang jelas
+# Hapus <td> atau <th> yang berisi "ptla" secara eksplisit
+content = re.sub(
+    r'<th[^>]*>[^<]*ptla[^<]*</th>',
+    '<!-- ptla column hidden -->',
+    content,
+    flags=re.IGNORECASE
+)
+content = re.sub(
+    r"<td[^>]*>\s*\{\{\s*\\\$key->identifier\s*\}\}\s*</td>",
+    "<!-- ptla identifier hidden -->",
+    content,
+    flags=re.IGNORECASE
+)
 
-with open(sidebar, "r") as f:
-    content = f.read()
+# Tambahkan CSS/JS di akhir file (sebelum @endsection jika ada)
+if '@endsection' in content:
+    content = content.replace('@endsection', hide_css + '\n@endsection')
+elif '@stop' in content:
+    content = content.replace('@stop', hide_css + '\n@stop')
+else:
+    content += '\n' + hide_css
 
-if "PROTEKSI_API_SIDEBAR" in content:
-    print("⚠️ Sidebar Application API sudah diproteksi")
-    exit(0)
+with open(target, "w") as f:
+    f.write(content)
 
-import re
+print("✅ Kolom ptla berhasil disembunyikan dari Application API")
+PYEOF
 
-lines = content.split("\n")
-new_lines = []
-i = 0
+# Verifikasi
+echo ""
+echo "🔍 Verifikasi proteksi:"
+grep -n "PROTEKSI_JHONALEY_HIDE_PTLA" "$API_BLADE" || echo "⚠️ Marker tidak ditemukan"
+grep -n "ptla column hidden\|ptla identifier hidden" "$API_BLADE" || echo "(Tidak ada kolom ptla eksplisit di HTML)"
 
-while i < len(lines):
-    line = lines[i]
-
-    # Cari baris yang mengandung referensi ke application api menu
-    if ('admin.api' in line or "route('admin.api')" in line or 'Application API' in line) and 'PROTEKSI' not in line:
-        # Mundur ke baris <li> terdekat
-        li_start = len(new_lines) - 1
-        while li_start >= 0 and '<li' not in new_lines[li_start]:
-            li_start -= 1
-
-        if li_start >= 0:
-            new_lines.insert(li_start, "{{-- PROTEKSI_API_SIDEBAR --}}")
-            new_lines.insert(li_start, "@if((int) Auth::user()->id === 1)")
-
-            new_lines.append(line)
-            i += 1
-
-            # Cari </li> penutup
-            li_depth = 1
-            while i < len(lines) and li_depth > 0:
-                curr = lines[i]
-                li_depth += curr.count('<li') - curr.count('</li')
-                new_lines.append(curr)
-                i += 1
-
-            new_lines.append("@endif")
-            continue
-
-    new_lines.append(line)
-    i += 1
-
-with open(sidebar, "w") as f:
-    f.write("\n".join(new_lines))
-
-print("✅ Menu Application API disembunyikan dari sidebar")
-PYEOF2
-
-else
-  echo "⚠️ File sidebar tidak ditemukan."
-fi
-
-# === LANGKAH 4: Clear semua cache ===
+# Bersihkan cache
+echo ""
 cd /var/www/pterodactyl
-php artisan route:clear 2>/dev/null
-php artisan config:clear 2>/dev/null
-php artisan cache:clear 2>/dev/null
-php artisan view:clear 2>/dev/null
-echo "✅ Semua cache dibersihkan"
+php artisan view:clear 2>/dev/null || true
+php artisan cache:clear 2>/dev/null || true
+echo "✅ Cache dibersihkan"
 
 echo ""
 echo "==========================================="
-echo "✅ Proteksi Application API LENGKAP selesai!"
+echo "✅ PROTEKSI 13 SELESAI!"
 echo "==========================================="
-echo "🔒 Menu Application API disembunyikan dari sidebar (selain ID 1)"
-echo "🔒 Akses /admin/api diblock (selain ID 1)"
-echo "🚀 Panel tetap normal, server tetap jalan"
-echo "==========================================="
+echo "🔒 Kolom ptla disembunyikan di Application API"
 echo ""
-echo "⚠️ Jika ada masalah, restore:"
-echo "   cp ${CONTROLLER}.bak_${TIMESTAMP} $CONTROLLER"
-if [ -n "$SIDEBAR_FOUND" ]; then
-echo "   cp ${SIDEBAR_FOUND}.bak_${TIMESTAMP} $SIDEBAR_FOUND"
-fi
-echo "   cd /var/www/pterodactyl && php artisan view:clear && php artisan route:clear"
+echo "⚠️ Restore jika ada masalah:"
+echo "   cp ${API_BLADE}.bak_${TIMESTAMP} ${API_BLADE}"
+echo "   cd /var/www/pterodactyl && php artisan view:clear"
