@@ -45,13 +45,6 @@ for i in 2 3 4 5 6 7 8 9 10 11 12 13; do
         echo "   ⚠️ Gagal download installprotect${i}.sh"
     fi
 done
-if curl -fsSL -o "$SCRIPTS_DIR/installbranding.sh" "$GITHUB_URL/installbranding.sh"; then
-    chmod +x "$SCRIPTS_DIR/installbranding.sh"
-    echo "   ✅ installbranding.sh"
-else
-    rm -f "$SCRIPTS_DIR/installbranding.sh"
-    echo "   ⚠️ Gagal download installbranding.sh"
-fi
 echo "✅ Download script selesai ke $SCRIPTS_DIR"
 
 # Buat config default jika belum ada
@@ -145,13 +138,6 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
             "description": "Sembunyikan menu Application API dan blokir akses controller",
             "marker": "PROTEKSI_JHONALEY_APPAPI",
             "target_file": "app/Http/Controllers/Admin/ApiController.php",
-            "enabled": false
-        },
-        "branding": {
-            "name": "Branding Footer",
-            "description": "Menambahkan branding footer Jhonaley Tech di panel",
-            "marker": "JHONALEY_BRANDING",
-            "target_file": "resources/views/layouts/admin.blade.php",
             "enabled": false
         }
     }
@@ -979,7 +965,7 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
             <h4 style="color: #fbbf24; font-size: 14px; margin-bottom: 10px;">💡 Download Script dari GitHub</h4>
             <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">Jalankan perintah ini via SSH untuk download semua script sekaligus:</p>
             <code style="color: #93c5fd; font-size: 11px; display: block; padding: 10px; background: #020617; border-radius: 6px; word-break: break-all;">
-SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p "$SCRIPTS_DIR" && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && curl -fsSL -o "$SCRIPTS_DIR/installbranding.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" || true && echo "✅ Download script selesai!"
+SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p "$SCRIPTS_DIR" && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && echo "✅ Download script selesai!"
             </code>
         </div>
     </div>
