@@ -1,0 +1,1094 @@
+#!/bin/bash
+# ============================================
+# installmaster.sh
+# Master Installer: Inject Protect Manager ke Pterodactyl Admin Panel
+# Menambahkan sidebar menu + halaman untuk install/uninstall proteksi
+# Hanya tampil untuk Admin ID 1
+# ============================================
+
+set -e
+
+PANEL_DIR="/var/www/pterodactyl"
+TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
+SCRIPTS_DIR="$PANEL_DIR/storage/app/protect-scripts"
+CONFIG_FILE="$PANEL_DIR/storage/app/protect-config.json"
+CONTROLLER_PATH="$PANEL_DIR/app/Http/Controllers/Admin/ProtectManagerController.php"
+VIEW_PATH="$PANEL_DIR/resources/views/admin/protect-manager.blade.php"
+
+echo "==========================================="
+echo "🛡️  MASTER INSTALLER: Protect Manager Panel"
+echo "==========================================="
+echo ""
+echo "📦 Membuat halaman Protect Manager di Admin Panel"
+echo "📦 Sidebar hanya tampil untuk Admin ID 1"
+echo ""
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 1: Buat direktori dan config
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📁 BAGIAN 1: Setup direktori & konfigurasi"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+mkdir -p "$SCRIPTS_DIR"
+chmod 755 "$SCRIPTS_DIR"
+
+# Download semua script proteksi dari Lovable preview
+PREVIEW_URL="https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts"
+echo "📥 Mendownload script proteksi..."
+for i in 2 3 4 5 6 7 8 9 10 11 12 13; do
+    curl -sS -o "$SCRIPTS_DIR/installprotect${i}.sh" "$PREVIEW_URL/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh" && echo "   ✅ installprotect${i}.sh" || echo "   ⚠️ Gagal download installprotect${i}.sh"
+done
+curl -sS -o "$SCRIPTS_DIR/installbranding.sh" "$PREVIEW_URL/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" && echo "   ✅ installbranding.sh" || echo "   ⚠️ Gagal download installbranding.sh"
+echo "✅ Semua script didownload ke $SCRIPTS_DIR"
+
+# Buat config default jika belum ada
+if [ ! -f "$CONFIG_FILE" ]; then
+cat > "$CONFIG_FILE" << 'CONFIGEOF'
+{
+    "brand_name": "Jhonaley Tech",
+    "brand_text": "Protect By Jhonaley",
+    "contact_telegram": "@danangvalentp",
+    "bot_link": "@upgradeuser_bot",
+    "protections": {
+        "protect2": {
+            "name": "Anti Hapus/Ubah User",
+            "description": "Melindungi data user dari penghapusan dan modifikasi oleh admin lain",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Admin/UserController.php",
+            "enabled": false
+        },
+        "protect3": {
+            "name": "Anti Akses Location",
+            "description": "Memblokir akses menu Location untuk admin selain ID 1",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Admin/LocationController.php",
+            "enabled": false
+        },
+        "protect4": {
+            "name": "Anti Akses Nodes",
+            "description": "Memblokir akses menu Nodes untuk admin selain ID 1",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Admin/Nodes/NodeController.php",
+            "enabled": false
+        },
+        "protect5": {
+            "name": "Nests + Branding + Welcome Banner",
+            "description": "Sembunyikan Nests, tambah branding footer & welcome banner",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "resources/views/layouts/admin.blade.php",
+            "enabled": false
+        },
+        "protect6": {
+            "name": "Anti Akses Settings",
+            "description": "Memblokir akses Settings panel untuk admin selain ID 1",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Admin/Settings/IndexController.php",
+            "enabled": false
+        },
+        "protect7": {
+            "name": "Anti Akses Server File",
+            "description": "Proteksi file controller server dari akses tidak sah",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Api/Client/Servers/FileController.php",
+            "enabled": false
+        },
+        "protect8": {
+            "name": "Anti Akses Server Controller",
+            "description": "Proteksi server controller dari akses tidak sah",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Api/Client/Servers/ServerController.php",
+            "enabled": false
+        },
+        "protect9": {
+            "name": "Anti Modifikasi Server",
+            "description": "Mencegah modifikasi detail server oleh admin lain",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Services/Servers/DetailsModificationService.php",
+            "enabled": false
+        },
+        "protect10": {
+            "name": "Anti Tautan Server (v1)",
+            "description": "Mencegah perubahan tautan/link server di admin panel",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "resources/views/admin/servers/index.blade.php",
+            "enabled": false
+        },
+        "protect11": {
+            "name": "Anti Tautan Server (v2)",
+            "description": "Versi lanjutan proteksi tautan server",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "resources/views/admin/servers/index.blade.php",
+            "enabled": false
+        },
+        "protect12": {
+            "name": "Konsolidasi Proteksi",
+            "description": "Gabungan proteksi Nodes, Client API, App API User, API Key, Locations",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Http/Controllers/Admin/Nodes/NodeController.php",
+            "enabled": false
+        },
+        "protect13": {
+            "name": "Proteksi Application API",
+            "description": "Sembunyikan menu Application API dan blokir akses controller",
+            "marker": "PROTEKSI_JHONALEY_APPAPI",
+            "target_file": "app/Http/Controllers/Admin/ApiController.php",
+            "enabled": false
+        },
+        "branding": {
+            "name": "Branding Footer",
+            "description": "Menambahkan branding footer Jhonaley Tech di panel",
+            "marker": "JHONALEY_BRANDING",
+            "target_file": "resources/views/layouts/admin.blade.php",
+            "enabled": false
+        }
+    }
+}
+CONFIGEOF
+echo "✅ Config default dibuat: $CONFIG_FILE"
+else
+    echo "⚠️ Config sudah ada, skip..."
+fi
+
+chown www-data:www-data "$CONFIG_FILE" 2>/dev/null || true
+chmod 664 "$CONFIG_FILE"
+
+echo "✅ BAGIAN 1 SELESAI"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 2: Buat Controller
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🎮 BAGIAN 2: Buat ProtectManagerController"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -f "$CONTROLLER_PATH" ]; then
+    cp "$CONTROLLER_PATH" "${CONTROLLER_PATH}.bak_${TIMESTAMP}"
+    echo "💾 Backup controller lama"
+fi
+
+cat > "$CONTROLLER_PATH" << 'PHPEOF'
+<?php
+
+namespace Pterodactyl\Http\Controllers\Admin;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
+use Pterodactyl\Http\Controllers\Controller;
+
+class ProtectManagerController extends Controller
+{
+    private $configPath;
+    private $scriptsDir;
+    private $panelDir;
+
+    public function __construct()
+    {
+        $this->panelDir = base_path();
+        $this->configPath = storage_path('app/protect-config.json');
+        $this->scriptsDir = storage_path('app/protect-scripts');
+    }
+
+    /**
+     * Cek apakah user adalah admin ID 1
+     */
+    private function authorize()
+    {
+        $user = Auth::user();
+        if (!$user || $user->id !== 1) {
+            abort(403, '🚫 Akses ditolak! Hanya admin ID 1 yang dapat mengakses Protect Manager.');
+        }
+    }
+
+    /**
+     * Baca konfigurasi
+     */
+    private function getConfig()
+    {
+        if (!File::exists($this->configPath)) {
+            return ['protections' => [], 'brand_name' => 'Jhonaley Tech', 'brand_text' => 'Protect By Jhonaley', 'contact_telegram' => '@danangvalentp', 'bot_link' => '@upgradeuser_bot'];
+        }
+        return json_decode(File::get($this->configPath), true);
+    }
+
+    /**
+     * Simpan konfigurasi
+     */
+    private function saveConfig($config)
+    {
+        File::put($this->configPath, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
+     */
+    private function checkInstalled($protection)
+    {
+        $targetFile = $this->panelDir . '/' . $protection['target_file'];
+        if (!File::exists($targetFile)) {
+            return false;
+        }
+        $content = File::get($targetFile);
+        return strpos($content, $protection['marker']) !== false;
+    }
+
+    /**
+     * Halaman utama Protect Manager
+     */
+    public function index()
+    {
+        $this->authorize();
+        $config = $this->getConfig();
+
+        // Cek status install setiap proteksi
+        foreach ($config['protections'] as $key => &$prot) {
+            $prot['installed'] = $this->checkInstalled($prot);
+        }
+
+        return view('admin.protect-manager', [
+            'config' => $config,
+            'protections' => $config['protections'],
+        ]);
+    }
+
+    /**
+     * Install proteksi
+     */
+    public function install(Request $request)
+    {
+        $this->authorize();
+        $key = $request->input('protection_key');
+        $config = $this->getConfig();
+
+        if (!isset($config['protections'][$key])) {
+            return redirect()->route('admin.protect-manager')->with('error', 'Proteksi tidak ditemukan: ' . $key);
+        }
+
+        $scriptFile = $this->scriptsDir . '/install' . $key . '.sh';
+        
+        if (!File::exists($scriptFile)) {
+            return redirect()->route('admin.protect-manager')->with('error', 'Script tidak ditemukan: install' . $key . '.sh — Upload script terlebih dahulu.');
+        }
+
+        // Set environment variables untuk script
+        $envVars = sprintf(
+            'BRAND_NAME="%s" BRAND_TEXT="%s" CONTACT_TELEGRAM="%s" BOT_LINK="%s"',
+            escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
+            escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
+            escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
+            escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
+        );
+
+        // Jalankan script
+        $output = [];
+        $returnVar = 0;
+        exec("cd {$this->panelDir} && bash {$scriptFile} 2>&1", $output, $returnVar);
+
+        $config['protections'][$key]['enabled'] = true;
+        $this->saveConfig($config);
+
+        $outputText = implode("\n", $output);
+        
+        if ($returnVar === 0) {
+            return redirect()->route('admin.protect-manager')->with('success', "✅ {$config['protections'][$key]['name']} berhasil diinstall!")->with('output', $outputText);
+        } else {
+            return redirect()->route('admin.protect-manager')->with('error', "❌ Gagal install {$config['protections'][$key]['name']}")->with('output', $outputText);
+        }
+    }
+
+    /**
+     * Uninstall proteksi (restore dari backup)
+     */
+    public function uninstall(Request $request)
+    {
+        $this->authorize();
+        $key = $request->input('protection_key');
+        $config = $this->getConfig();
+
+        if (!isset($config['protections'][$key])) {
+            return redirect()->route('admin.protect-manager')->with('error', 'Proteksi tidak ditemukan.');
+        }
+
+        $targetFile = $this->panelDir . '/' . $config['protections'][$key]['target_file'];
+        
+        // Cari backup terbaru
+        $dir = dirname($targetFile);
+        $basename = basename($targetFile);
+        $backups = glob($dir . '/' . $basename . '.bak_*');
+        
+        if (empty($backups)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada backup ditemukan untuk ' . $config['protections'][$key]['name'] . '. Tidak bisa uninstall.');
+        }
+
+        // Ambil backup terbaru
+        sort($backups);
+        $latestBackup = end($backups);
+
+        // Restore
+        if (File::exists($latestBackup)) {
+            File::copy($latestBackup, $targetFile);
+            $config['protections'][$key]['enabled'] = false;
+            $this->saveConfig($config);
+
+            // Clear cache
+            exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+
+            return redirect()->route('admin.protect-manager')->with('success', "✅ {$config['protections'][$key]['name']} berhasil di-uninstall! (Restored dari backup)");
+        }
+
+        return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore backup.');
+    }
+
+    /**
+     * Update konfigurasi (nama brand, teks, dll)
+     */
+    public function updateConfig(Request $request)
+    {
+        $this->authorize();
+        $config = $this->getConfig();
+
+        $config['brand_name'] = $request->input('brand_name', $config['brand_name']);
+        $config['brand_text'] = $request->input('brand_text', $config['brand_text']);
+        $config['contact_telegram'] = $request->input('contact_telegram', $config['contact_telegram']);
+        $config['bot_link'] = $request->input('bot_link', $config['bot_link']);
+
+        // Update nama dan deskripsi proteksi jika dikirim
+        if ($request->has('protection_names')) {
+            foreach ($request->input('protection_names') as $key => $name) {
+                if (isset($config['protections'][$key])) {
+                    $config['protections'][$key]['name'] = $name;
+                }
+            }
+        }
+        if ($request->has('protection_descriptions')) {
+            foreach ($request->input('protection_descriptions') as $key => $desc) {
+                if (isset($config['protections'][$key])) {
+                    $config['protections'][$key]['description'] = $desc;
+                }
+            }
+        }
+
+        $this->saveConfig($config);
+
+        return redirect()->route('admin.protect-manager')->with('success', '✅ Konfigurasi berhasil diupdate!');
+    }
+
+    /**
+     * Upload script proteksi
+     */
+    public function uploadScript(Request $request)
+    {
+        $this->authorize();
+
+        if ($request->hasFile('script_file')) {
+            $file = $request->file('script_file');
+            $filename = $file->getClientOriginalName();
+            $file->move($this->scriptsDir, $filename);
+            chmod($this->scriptsDir . '/' . $filename, 0755);
+
+            return redirect()->route('admin.protect-manager')->with('success', "✅ Script '{$filename}' berhasil diupload!");
+        }
+
+        return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada file yang diupload.');
+    }
+
+    /**
+     * Install semua proteksi yang dicentang
+     */
+    public function bulkInstall(Request $request)
+    {
+        $this->authorize();
+        $selected = $request->input('selected_protections', []);
+        $config = $this->getConfig();
+        $results = [];
+
+        foreach ($selected as $key) {
+            if (!isset($config['protections'][$key])) continue;
+
+            $scriptFile = $this->scriptsDir . '/install' . $key . '.sh';
+            if (!File::exists($scriptFile)) {
+                $results[] = "⚠️ {$config['protections'][$key]['name']}: Script tidak ditemukan";
+                continue;
+            }
+
+            $output = [];
+            $returnVar = 0;
+            exec("cd {$this->panelDir} && bash {$scriptFile} 2>&1", $output, $returnVar);
+
+            if ($returnVar === 0) {
+                $config['protections'][$key]['enabled'] = true;
+                $results[] = "✅ {$config['protections'][$key]['name']}: Berhasil diinstall";
+            } else {
+                $results[] = "❌ {$config['protections'][$key]['name']}: Gagal install";
+            }
+        }
+
+        $this->saveConfig($config);
+
+        return redirect()->route('admin.protect-manager')->with('success', implode("\n", $results));
+    }
+}
+PHPEOF
+
+chmod 644 "$CONTROLLER_PATH"
+echo "✅ Controller dibuat: $CONTROLLER_PATH"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 3: Buat View (Blade Template)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🎨 BAGIAN 3: Buat Blade View"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [ -f "$VIEW_PATH" ]; then
+    cp "$VIEW_PATH" "${VIEW_PATH}.bak_${TIMESTAMP}"
+fi
+
+cat > "$VIEW_PATH" << 'VIEWEOF'
+@extends('layouts.admin')
+
+@section('title')
+    Protect Manager
+@endsection
+
+@section('content-header')
+    <h1>🛡️ Protect Manager<small>Kelola proteksi panel Anda</small></h1>
+    <ol class="breadcrumb">
+        <li><a href="{{ route('admin.index') }}">Admin</a></li>
+        <li class="active">Protect Manager</li>
+    </ol>
+@endsection
+
+@section('content')
+<style>
+    .protect-card {
+        background: linear-gradient(135deg, #0c1929 0%, #132f4c 50%, #0a2744 100%);
+        border: 1px solid #1e3a5f;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        transition: all 0.3s ease;
+    }
+    .protect-card:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);
+    }
+    .protect-card.installed {
+        border-left: 4px solid #22c55e;
+    }
+    .protect-card.not-installed {
+        border-left: 4px solid #64748b;
+    }
+    .protect-header {
+        background: linear-gradient(135deg, #0c1929 0%, #1a365d 100%);
+        border: 1px solid #1e3a5f;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+    }
+    .protect-header h2 {
+        color: #93c5fd;
+        margin: 0 0 5px 0;
+        font-size: 24px;
+    }
+    .protect-header p {
+        color: #94a3b8;
+        margin: 0;
+    }
+    .badge-installed {
+        background: #166534;
+        color: #4ade80;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .badge-not-installed {
+        background: #1e293b;
+        color: #94a3b8;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .protect-title {
+        color: #e2e8f0;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    .protect-desc {
+        color: #94a3b8;
+        font-size: 13px;
+        margin-bottom: 10px;
+    }
+    .btn-install {
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: white;
+        border: none;
+        padding: 6px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-install:hover {
+        background: linear-gradient(135deg, #1d4ed8, #2563eb);
+        color: white;
+        transform: translateY(-1px);
+    }
+    .btn-uninstall {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+        color: white;
+        border: none;
+        padding: 6px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-uninstall:hover {
+        background: linear-gradient(135deg, #b91c1c, #dc2626);
+        color: white;
+        transform: translateY(-1px);
+    }
+    .btn-save-config {
+        background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+        color: white;
+        border: none;
+        padding: 8px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .btn-save-config:hover {
+        background: linear-gradient(135deg, #6d28d9, #7c3aed);
+        color: white;
+        transform: translateY(-1px);
+    }
+    .btn-bulk {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+        border: none;
+        padding: 10px 28px;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .btn-bulk:hover {
+        background: linear-gradient(135deg, #047857, #059669);
+        color: white;
+        transform: translateY(-1px);
+    }
+    .config-section {
+        background: linear-gradient(135deg, #0c1929 0%, #132f4c 100%);
+        border: 1px solid #1e3a5f;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+    }
+    .config-section h3 {
+        color: #93c5fd;
+        margin: 0 0 20px 0;
+        font-size: 18px;
+    }
+    .config-input {
+        background: #0f172a;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        width: 100%;
+        font-size: 14px;
+        transition: border-color 0.2s;
+    }
+    .config-input:focus {
+        border-color: #3b82f6;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    .config-label {
+        color: #94a3b8;
+        font-size: 13px;
+        margin-bottom: 5px;
+        display: block;
+    }
+    .alert-custom {
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        font-size: 14px;
+    }
+    .output-box {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 12px;
+        color: #94a3b8;
+        font-family: monospace;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        margin-top: 10px;
+    }
+    .select-all-box {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .select-all-box label {
+        color: #e2e8f0;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .custom-check {
+        width: 20px;
+        height: 20px;
+        accent-color: #3b82f6;
+        cursor: pointer;
+    }
+    .tab-btn {
+        background: transparent;
+        border: 1px solid #334155;
+        color: #94a3b8;
+        padding: 8px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+        margin-right: 8px;
+        margin-bottom: 8px;
+    }
+    .tab-btn.active, .tab-btn:hover {
+        background: #1e3a5f;
+        border-color: #3b82f6;
+        color: #93c5fd;
+    }
+    .editable-name {
+        background: transparent;
+        border: 1px solid transparent;
+        color: #e2e8f0;
+        font-size: 16px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 4px;
+        width: 100%;
+        transition: all 0.2s;
+    }
+    .editable-name:hover, .editable-name:focus {
+        background: #0f172a;
+        border-color: #334155;
+        outline: none;
+    }
+    .editable-desc {
+        background: transparent;
+        border: 1px solid transparent;
+        color: #94a3b8;
+        font-size: 13px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        width: 100%;
+        transition: all 0.2s;
+    }
+    .editable-desc:hover, .editable-desc:focus {
+        background: #0f172a;
+        border-color: #334155;
+        outline: none;
+    }
+</style>
+
+{{-- Notifikasi --}}
+@if(session('success'))
+    <div class="alert alert-success alert-custom">
+        {!! nl2br(e(session('success'))) !!}
+    </div>
+@endif
+@if(session('error'))
+    <div class="alert alert-danger alert-custom">
+        {!! nl2br(e(session('error'))) !!}
+    </div>
+@endif
+@if(session('output'))
+    <div class="output-box">{{ session('output') }}</div>
+@endif
+
+{{-- Header --}}
+<div class="protect-header">
+    <h2>🛡️ Protect Manager</h2>
+    <p>Kelola semua proteksi panel dari sini. Centang proteksi yang ingin diinstall, lalu klik "Terapkan".</p>
+</div>
+
+{{-- Tab Navigation --}}
+<div style="margin-bottom: 20px;">
+    <button class="tab-btn active" onclick="showTab('protections', this)">🔒 Proteksi</button>
+    <button class="tab-btn" onclick="showTab('config', this)">⚙️ Konfigurasi</button>
+    <button class="tab-btn" onclick="showTab('upload', this)">📤 Upload Script</button>
+</div>
+
+{{-- TAB: Proteksi --}}
+<div id="tab-protections">
+    <form action="{{ route('admin.protect-manager.bulk-install') }}" method="POST">
+        @csrf
+
+        {{-- Select All --}}
+        <div class="select-all-box">
+            <label>
+                <input type="checkbox" class="custom-check" id="selectAll" onclick="toggleAll(this)" style="margin-right: 10px;">
+                Pilih Semua (yang belum terinstall)
+            </label>
+            <button type="submit" class="btn-bulk">🚀 Terapkan yang Dicentang</button>
+        </div>
+
+        {{-- Protection Cards --}}
+        <div class="row">
+            @foreach($protections as $key => $prot)
+            <div class="col-md-6">
+                <div class="protect-card {{ $prot['installed'] ? 'installed' : 'not-installed' }}">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+                        <div style="display: flex; align-items: flex-start; flex: 1;">
+                            @if(!$prot['installed'])
+                            <input type="checkbox" name="selected_protections[]" value="{{ $key }}" class="custom-check protect-check" style="margin-right: 12px; margin-top: 3px;">
+                            @else
+                            <span style="margin-right: 12px; font-size: 18px;">✅</span>
+                            @endif
+                            <div style="flex: 1;">
+                                <div class="protect-title">{{ $prot['name'] }}</div>
+                                <div class="protect-desc">{{ $prot['description'] }}</div>
+                                <div style="margin-top: 8px;">
+                                    @if($prot['installed'])
+                                        <span class="badge-installed">● Terinstall</span>
+                                    @else
+                                        <span class="badge-not-installed">○ Belum Install</span>
+                                    @endif
+                                    <span style="color: #475569; font-size: 11px; margin-left: 10px;">{{ $key }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                            @if(!$prot['installed'])
+                            <form action="{{ route('admin.protect-manager.install') }}" method="POST" style="display:inline;">
+                                @csrf
+                                <input type="hidden" name="protection_key" value="{{ $key }}">
+                                <button type="submit" class="btn-install" onclick="return confirm('Install {{ $prot['name'] }}?')">Install</button>
+                            </form>
+                            @else
+                            <form action="{{ route('admin.protect-manager.uninstall') }}" method="POST" style="display:inline;">
+                                @csrf
+                                <input type="hidden" name="protection_key" value="{{ $key }}">
+                                <button type="submit" class="btn-uninstall" onclick="return confirm('Uninstall {{ $prot['name'] }}? Ini akan restore dari backup.')">Uninstall</button>
+                            </form>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @endforeach
+        </div>
+    </form>
+</div>
+
+{{-- TAB: Konfigurasi --}}
+<div id="tab-config" style="display: none;">
+    <form action="{{ route('admin.protect-manager.update-config') }}" method="POST">
+        @csrf
+        
+        {{-- Brand Settings --}}
+        <div class="config-section">
+            <h3>🏷️ Pengaturan Brand</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="config-label">Nama Brand</label>
+                        <input type="text" name="brand_name" value="{{ $config['brand_name'] ?? 'Jhonaley Tech' }}" class="config-input">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="config-label">Teks Proteksi</label>
+                        <input type="text" name="brand_text" value="{{ $config['brand_text'] ?? 'Protect By Jhonaley' }}" class="config-input">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="config-label">Kontak Telegram</label>
+                        <input type="text" name="contact_telegram" value="{{ $config['contact_telegram'] ?? '@danangvalentp' }}" class="config-input">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label class="config-label">Link Bot</label>
+                        <input type="text" name="bot_link" value="{{ $config['bot_link'] ?? '@upgradeuser_bot' }}" class="config-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Protection Names Edit --}}
+        <div class="config-section">
+            <h3>✏️ Edit Nama & Deskripsi Proteksi</h3>
+            @foreach($protections as $key => $prot)
+            <div style="padding: 12px 0; border-bottom: 1px solid #1e3a5f;">
+                <div class="row">
+                    <div class="col-md-1" style="display: flex; align-items: center; justify-content: center;">
+                        <span style="color: #475569; font-size: 12px;">{{ $key }}</span>
+                    </div>
+                    <div class="col-md-4">
+                        <input type="text" name="protection_names[{{ $key }}]" value="{{ $prot['name'] }}" class="editable-name" placeholder="Nama proteksi">
+                    </div>
+                    <div class="col-md-7">
+                        <input type="text" name="protection_descriptions[{{ $key }}]" value="{{ $prot['description'] }}" class="editable-desc" placeholder="Deskripsi">
+                    </div>
+                </div>
+            </div>
+            @endforeach
+        </div>
+
+        <div style="text-align: right; margin-top: 15px;">
+            <button type="submit" class="btn-save-config">💾 Simpan Konfigurasi</button>
+        </div>
+    </form>
+</div>
+
+{{-- TAB: Upload Script --}}
+<div id="tab-upload" style="display: none;">
+    <div class="config-section">
+        <h3>📤 Upload Script Proteksi</h3>
+        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px;">
+            Upload file .sh script proteksi ke server. Nama file harus sesuai format: <code style="color: #93c5fd;">installprotectX.sh</code>
+        </p>
+        <form action="{{ route('admin.protect-manager.upload-script') }}" method="POST" enctype="multipart/form-data">
+            @csrf
+            <div class="form-group">
+                <input type="file" name="script_file" accept=".sh" class="config-input" style="padding: 10px;">
+            </div>
+            <button type="submit" class="btn-install" style="margin-top: 10px;">📤 Upload Script</button>
+        </form>
+
+        <div style="margin-top: 25px;">
+            <h4 style="color: #93c5fd; font-size: 15px;">📂 Script yang Tersedia</h4>
+            <div style="margin-top: 10px;">
+                @php
+                    $scriptFiles = glob(storage_path('app/protect-scripts/*.sh'));
+                @endphp
+                @if(count($scriptFiles) > 0)
+                    @foreach($scriptFiles as $sf)
+                    <div style="padding: 8px 12px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; color: #94a3b8; font-family: monospace; font-size: 13px;">
+                        📄 {{ basename($sf) }}
+                        <span style="float: right; color: #475569;">{{ number_format(filesize($sf) / 1024, 1) }} KB</span>
+                    </div>
+                    @endforeach
+                @else
+                    <p style="color: #64748b; font-style: italic;">Belum ada script yang diupload. Upload script atau jalankan perintah download di bawah.</p>
+                @endif
+            </div>
+        </div>
+
+        <div style="margin-top: 25px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 8px;">
+            <h4 style="color: #fbbf24; font-size: 14px; margin-bottom: 10px;">💡 Download Script dari Lovable</h4>
+            <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">Jalankan perintah ini via SSH untuk download semua script sekaligus:</p>
+            <code style="color: #93c5fd; font-size: 11px; display: block; padding: 10px; background: #020617; border-radius: 6px; word-break: break-all;">
+SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p $SCRIPTS_DIR && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -sS -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && curl -sS -o "$SCRIPTS_DIR/installbranding.sh" "https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" && echo "✅ Semua script berhasil didownload!"
+            </code>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTab(tab, btn) {
+    document.getElementById('tab-protections').style.display = 'none';
+    document.getElementById('tab-config').style.display = 'none';
+    document.getElementById('tab-upload').style.display = 'none';
+    document.getElementById('tab-' + tab).style.display = 'block';
+    
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+function toggleAll(checkbox) {
+    document.querySelectorAll('.protect-check').forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+}
+</script>
+@endsection
+VIEWEOF
+
+chmod 644 "$VIEW_PATH"
+echo "✅ View dibuat: $VIEW_PATH"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 4: Tambah Route
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🛣️  BAGIAN 4: Tambah Route"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+ROUTES_FILE="$PANEL_DIR/routes/admin.php"
+
+if [ ! -f "$ROUTES_FILE" ]; then
+    echo "❌ File routes tidak ditemukan: $ROUTES_FILE"
+else
+    cp "$ROUTES_FILE" "${ROUTES_FILE}.bak_${TIMESTAMP}"
+    echo "💾 Backup: ${ROUTES_FILE}.bak_${TIMESTAMP}"
+
+    if grep -q "protect-manager" "$ROUTES_FILE"; then
+        echo "⚠️ Route protect-manager sudah ada, skip..."
+    else
+        # Tambahkan route di akhir file (sebelum closing bracket terakhir jika ada)
+        cat >> "$ROUTES_FILE" << 'ROUTEEOF'
+
+/*
+|--------------------------------------------------------------------------
+| Protect Manager Routes (PROTEKSI_JHONALEY_MASTER)
+|--------------------------------------------------------------------------
+*/
+Route::group(['prefix' => 'protect-manager'], function () {
+    Route::get('/', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'index'])->name('admin.protect-manager');
+    Route::post('/install', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'install'])->name('admin.protect-manager.install');
+    Route::post('/uninstall', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'uninstall'])->name('admin.protect-manager.uninstall');
+    Route::post('/update-config', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'updateConfig'])->name('admin.protect-manager.update-config');
+    Route::post('/upload-script', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'uploadScript'])->name('admin.protect-manager.upload-script');
+    Route::post('/bulk-install', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'bulkInstall'])->name('admin.protect-manager.bulk-install');
+});
+ROUTEEOF
+        echo "✅ Route ditambahkan"
+    fi
+fi
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 5: Tambah Sidebar Menu (hanya ID 1)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📌 BAGIAN 5: Tambah Sidebar Menu"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Cari file layout admin
+LAYOUT_FILE=""
+LAYOUT_CANDIDATES=(
+    "$PANEL_DIR/resources/views/layouts/admin.blade.php"
+    "$PANEL_DIR/resources/views/layouts/app.blade.php"
+    "$PANEL_DIR/resources/views/layouts/master.blade.php"
+)
+
+for candidate in "${LAYOUT_CANDIDATES[@]}"; do
+    if [ -f "$candidate" ]; then
+        LAYOUT_FILE="$candidate"
+        break
+    fi
+done
+
+if [ -z "$LAYOUT_FILE" ]; then
+    echo "❌ Layout file tidak ditemukan!"
+    echo "⏭️ Skip penambahan sidebar. Tambahkan manual."
+else
+    echo "📂 Layout ditemukan: $LAYOUT_FILE"
+    cp "$LAYOUT_FILE" "${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
+    echo "💾 Backup: ${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
+
+    if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$LAYOUT_FILE"; then
+        echo "⚠️ Sidebar Protect Manager sudah ada, skip..."
+    else
+        # Cari posisi sidebar - biasanya sebelum </ul> terakhir atau sebelum tag tertentu
+        # Strategi: cari baris terakhir yang mengandung "</li>" di dalam sidebar
+        # dan inject setelahnya
+
+        # Metode 1: Cari "Settings" menu item sebagai anchor point (biasanya terakhir)
+        SETTINGS_LINE=$(grep -n "Settings\|settings\|Configuration" "$LAYOUT_FILE" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
+        
+        if [ -z "$SETTINGS_LINE" ]; then
+            # Metode 2: Cari </ul> terakhir di sidebar
+            SETTINGS_LINE=$(grep -n "</ul>" "$LAYOUT_FILE" | tail -1 | cut -d: -f1)
+        fi
+
+        if [ -n "$SETTINGS_LINE" ]; then
+            # Cari </li> terdekat setelah SETTINGS_LINE
+            TOTAL_LINES=$(wc -l < "$LAYOUT_FILE")
+            INSERT_LINE=$SETTINGS_LINE
+            for i in $(seq "$SETTINGS_LINE" $((SETTINGS_LINE + 15))); do
+                if [ "$i" -gt "$TOTAL_LINES" ]; then break; fi
+                if sed -n "${i}p" "$LAYOUT_FILE" | grep -q "</li>"; then
+                    INSERT_LINE=$i
+                    break
+                fi
+            done
+
+            # Inject sidebar menu setelah INSERT_LINE
+            SIDEBAR_CODE='
+                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
+                @if(Auth::user() && Auth::user()->id === 1)
+                <li class="{{ Route::currentRouteName() === '\''admin.protect-manager'\'' ? '\''active'\'' : '\'''\'' }}">
+                    <a href="{{ route('\''admin.protect-manager'\'') }}">
+                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
+                    </a>
+                </li>
+                @endif
+                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}'
+
+            sed -i "${INSERT_LINE}a\\${SIDEBAR_CODE}" "$LAYOUT_FILE"
+            
+            echo "✅ Sidebar menu ditambahkan di baris $INSERT_LINE"
+        else
+            echo "⚠️ Tidak bisa menemukan posisi sidebar yang tepat"
+            echo "📝 Tambahkan manual di layout file:"
+            echo '   @if(Auth::user() && Auth::user()->id === 1)'
+            echo '   <li><a href="{{ route('\''admin.protect-manager'\'') }}"><i class="fa fa-shield"></i> <span>Protect Manager</span></a></li>'
+            echo '   @endif'
+        fi
+    fi
+fi
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BAGIAN 6: Clear Cache
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "🧹 Membersihkan cache..."
+cd "$PANEL_DIR"
+php artisan route:clear 2>/dev/null || true
+php artisan config:clear 2>/dev/null || true
+php artisan cache:clear 2>/dev/null || true
+php artisan view:clear 2>/dev/null || true
+echo "✅ Semua cache dibersihkan"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SELESAI
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo ""
+echo "==========================================="
+echo "✅ MASTER INSTALLER SELESAI!"
+echo "==========================================="
+echo ""
+echo "🛡️  Protect Manager berhasil diinstall!"
+echo ""
+echo "📌 Fitur:"
+echo "   • Sidebar menu 'Protect Manager' (hanya untuk Admin ID 1)"
+echo "   • Install/Uninstall proteksi via centang & klik"
+echo "   • Edit nama brand, teks proteksi, kontak"
+echo "   • Edit nama & deskripsi setiap proteksi"
+echo "   • Upload script proteksi baru"
+echo "   • Bulk install (centang beberapa, terapkan sekaligus)"
+echo ""
+echo "✅ Semua script proteksi sudah otomatis didownload ke server."
+echo ""
+echo "🌐 Akses: Admin Panel → Sidebar → Protect Manager"
+echo ""
+echo "⚠️ Jika ada masalah, restore:"
+[ -f "${CONTROLLER_PATH}.bak_${TIMESTAMP}" ] && echo "   cp ${CONTROLLER_PATH}.bak_${TIMESTAMP} ${CONTROLLER_PATH}"
+echo "   rm ${VIEW_PATH}"
+[ -f "${ROUTES_FILE}.bak_${TIMESTAMP}" ] && echo "   cp ${ROUTES_FILE}.bak_${TIMESTAMP} ${ROUTES_FILE}"
+[ -f "${LAYOUT_FILE}.bak_pm_${TIMESTAMP}" ] && echo "   cp ${LAYOUT_FILE}.bak_pm_${TIMESTAMP} ${LAYOUT_FILE}"
+echo "   cd $PANEL_DIR && php artisan view:clear && php artisan route:clear"
