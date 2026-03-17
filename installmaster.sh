@@ -194,10 +194,10 @@ class ProtectManagerController extends Controller
     /**
      * Cek apakah user adalah admin ID 1
      */
-    private function authorize()
+    private function authorizeAccess()
     {
         $user = Auth::user();
-        if (!$user || $user->id !== 1) {
+        if (!$user || (int) $user->id !== 1) {
             abort(403, '🚫 Akses ditolak! Hanya admin ID 1 yang dapat mengakses Protect Manager.');
         }
     }
@@ -239,7 +239,7 @@ class ProtectManagerController extends Controller
      */
     public function index()
     {
-        $this->authorize();
+        $this->authorizeAccess();
         $config = $this->getConfig();
 
         // Cek status install setiap proteksi
@@ -258,7 +258,7 @@ class ProtectManagerController extends Controller
      */
     public function install(Request $request)
     {
-        $this->authorize();
+        $this->authorizeAccess();
         $key = $request->input('protection_key');
         $config = $this->getConfig();
 
@@ -303,7 +303,7 @@ class ProtectManagerController extends Controller
      */
     public function uninstall(Request $request)
     {
-        $this->authorize();
+        $this->authorizeAccess();
         $key = $request->input('protection_key');
         $config = $this->getConfig();
 
@@ -346,7 +346,7 @@ class ProtectManagerController extends Controller
      */
     public function updateConfig(Request $request)
     {
-        $this->authorize();
+        $this->authorizeAccess();
         $config = $this->getConfig();
 
         $config['brand_name'] = $request->input('brand_name', $config['brand_name']);
@@ -380,7 +380,7 @@ class ProtectManagerController extends Controller
      */
     public function uploadScript(Request $request)
     {
-        $this->authorize();
+        $this->authorizeAccess();
 
         if ($request->hasFile('script_file')) {
             $file = $request->file('script_file');
@@ -399,7 +399,7 @@ class ProtectManagerController extends Controller
      */
     public function bulkInstall(Request $request)
     {
-        $this->authorize();
+        $this->authorizeAccess();
         $selected = $request->input('selected_protections', []);
         $config = $this->getConfig();
         $results = [];
