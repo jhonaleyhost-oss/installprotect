@@ -2,6 +2,14 @@
 
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
+echo "==========================================="
+echo "🔒 INSTALLPROTECT5: Proteksi Nests + Branding + Welcome Banner"
+echo "==========================================="
+echo ""
+echo "📦 Bagian 1: Proteksi Nests (Sembunyikan + Block Akses)"
+echo "📦 Bagian 2: Branding Footer Jhonaley Tech"
+echo "📦 Bagian 3: Welcome Banner Client Dashboard"
+echo ""
 echo "🚀 Memasang proteksi Nests (Sembunyikan + Block Akses)..."
 echo ""
 
@@ -432,10 +440,154 @@ for LF in "${LAYOUT_FILES[@]}"; do
   fi
 done
 
-php artisan view:clear 2>/dev/null
+echo "✅ Branding selesai!"
+
+# ============================================================
+# === BAGIAN 3: Welcome Banner di Client Dashboard ===
+# ============================================================
 echo ""
-echo "🎨 Branding Jhonaley Tech terpasang!"
-echo "   ⚡ Footer gradient + badge Protected"
-echo "   📱 Link Telegram @danangvalentp"
-echo "   📝 Promo @upgradeuser_bot"
-echo "   📝 Title panel diubah"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 BAGIAN 3: Welcome Banner Client Dashboard"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+WRAPPER_FILE="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+MASTER_FILE="/var/www/pterodactyl/resources/views/layouts/master.blade.php"
+
+WELCOME_TARGET=""
+if [ -f "$WRAPPER_FILE" ]; then
+  WELCOME_TARGET="$WRAPPER_FILE"
+elif [ -f "$MASTER_FILE" ]; then
+  WELCOME_TARGET="$MASTER_FILE"
+else
+  WELCOME_TARGET=$(find /var/www/pterodactyl/resources/views/ -name "wrapper.blade.php" 2>/dev/null | head -1)
+  if [ -z "$WELCOME_TARGET" ]; then
+    WELCOME_TARGET=$(find /var/www/pterodactyl/resources/views/templates/ -name "*.blade.php" 2>/dev/null | head -1)
+  fi
+fi
+
+if [ -z "$WELCOME_TARGET" ] || [ ! -f "$WELCOME_TARGET" ]; then
+  echo "⚠️ File layout client tidak ditemukan, skip welcome banner."
+else
+  echo "📂 Target: $WELCOME_TARGET"
+
+  if grep -q "WELCOME_JHONALEY" "$WELCOME_TARGET"; then
+    echo "⚠️ Welcome banner sudah terpasang, skip."
+  else
+    cp "$WELCOME_TARGET" "${WELCOME_TARGET}.bak_${TIMESTAMP}"
+    echo "💾 Backup: ${WELCOME_TARGET}.bak_${TIMESTAMP}"
+
+    # Tulis welcome code ke file temp lalu inject
+    WELCOME_TEMP=$(mktemp)
+    cat > "$WELCOME_TEMP" << 'WELCOME_EOF'
+<!-- WELCOME_JHONALEY: Welcome Banner -->
+<style>
+  .jhonaley-welcome {
+    background: linear-gradient(135deg, #0c1929, #132f4c, #0a2744);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1);
+  }
+  .jhonaley-welcome .jw-icon {
+    background: rgba(59, 130, 246, 0.2);
+    border-radius: 50%;
+    width: 36px; height: 36px; min-width: 36px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #60a5fa; margin-top: 2px;
+  }
+  .jhonaley-welcome .jw-content h3 {
+    color: #93c5fd; font-size: 16px; font-weight: 700;
+    margin: 0 0 6px 0; letter-spacing: 0.3px;
+  }
+  .jhonaley-welcome .jw-content p {
+    color: #94a3b8; font-size: 14px; margin: 0; line-height: 1.5;
+  }
+  .jhonaley-welcome .jw-content a {
+    color: #e2e8f0; font-weight: 700; text-decoration: none; transition: color 0.2s;
+  }
+  .jhonaley-welcome .jw-content a:hover {
+    color: #93c5fd; text-shadow: 0 0 8px rgba(147, 197, 253, 0.3);
+  }
+</style>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  function injectWelcome() {
+    if (document.getElementById("jhonaley-welcome-banner")) return;
+    var containers = [
+      document.querySelector("[class*=ContentContainer]"),
+      document.querySelector("[class*=content-wrapper]"),
+      document.querySelector("#app > div > div:last-child"),
+      document.querySelector("main"),
+      document.querySelector(".content-wrapper"),
+      document.querySelector("#app")
+    ];
+    var target = null;
+    for (var i = 0; i < containers.length; i++) {
+      if (containers[i]) { target = containers[i]; break; }
+    }
+    if (!target) return;
+    var banner = document.createElement("div");
+    banner.id = "jhonaley-welcome-banner";
+    banner.className = "jhonaley-welcome";
+    banner.innerHTML = '<div class="jw-icon">\u2139\ufe0f</div><div class="jw-content"><h3>Welcome to Jhonaley Hosting</h3><p>Terimakasih Telah Order di Jhonaley Store, Jika Ada kendala hubungi <a href="https://t.me/danangvalentp" target="_blank">@danangvalentp</a></p></div>';
+    if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
+    else { target.appendChild(banner); }
+  }
+  injectWelcome();
+  var observer = new MutationObserver(function() {
+    if (!document.getElementById("jhonaley-welcome-banner")) injectWelcome();
+  });
+  var appEl = document.getElementById("app") || document.body;
+  observer.observe(appEl, { childList: true, subtree: true });
+});
+</script>
+<!-- /WELCOME_JHONALEY -->
+WELCOME_EOF
+
+    # Inject via python (paling reliable)
+    python3 << PYEOF
+with open("$WELCOME_TARGET", "r") as f:
+    content = f.read()
+with open("$WELCOME_TEMP", "r") as f:
+    welcome = f.read()
+if "</body>" in content:
+    content = content.replace("</body>", welcome + "\n</body>")
+elif "</html>" in content:
+    content = content.replace("</html>", welcome + "\n</html>")
+else:
+    content += "\n" + welcome
+with open("$WELCOME_TARGET", "w") as f:
+    f.write(content)
+print("✅ Welcome banner diinjeksi")
+PYEOF
+
+    rm -f "$WELCOME_TEMP"
+    echo "✅ Welcome banner terpasang di $(basename $WELCOME_TARGET)"
+  fi
+fi
+
+# ===================================================================
+# CLEAR CACHE
+# ===================================================================
+cd /var/www/pterodactyl
+php artisan view:clear 2>/dev/null
+php artisan cache:clear 2>/dev/null
+echo "✅ Cache dibersihkan"
+
+echo ""
+echo "==========================================="
+echo "✅ INSTALLPROTECT5 SELESAI!"
+echo "==========================================="
+echo "🔒 Menu Nests disembunyikan (selain ID 1)"
+echo "🔒 Akses NestController diblock (selain ID 1)"
+echo "🎨 Branding footer Jhonaley Tech terpasang"
+echo "📝 Title panel diubah"
+echo "📋 Welcome banner terpasang di client dashboard"
+echo "📱 Kontak: @danangvalentp"
+echo "==========================================="
