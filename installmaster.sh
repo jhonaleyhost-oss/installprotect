@@ -1027,19 +1027,23 @@ else
                 fi
             done
 
-            # Inject sidebar menu setelah INSERT_LINE
-            SIDEBAR_CODE='
+            # Inject sidebar menu setelah INSERT_LINE menggunakan temp file
+            TEMP_FILE=$(mktemp)
+            head -n "$INSERT_LINE" "$LAYOUT_FILE" > "$TEMP_FILE"
+            cat >> "$TEMP_FILE" << 'SIDEBAREOF'
                 {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
                 @if(Auth::user() && Auth::user()->id === 1)
-                <li class="{{ Route::currentRouteName() === '\''admin.protect-manager'\'' ? '\''active'\'' : '\'''\'' }}">
-                    <a href="{{ route('\''admin.protect-manager'\'') }}">
+                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
+                    <a href="{{ route('admin.protect-manager') }}">
                         <i class="fa fa-shield"></i> <span>Protect Manager</span>
                     </a>
                 </li>
                 @endif
-                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}'
-
-            sed -i "${INSERT_LINE}a\\${SIDEBAR_CODE}" "$LAYOUT_FILE"
+                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
+SIDEBAREOF
+            tail -n +"$((INSERT_LINE + 1))" "$LAYOUT_FILE" >> "$TEMP_FILE"
+            mv "$TEMP_FILE" "$LAYOUT_FILE"
+            chmod 644 "$LAYOUT_FILE"
             
             echo "✅ Sidebar menu ditambahkan di baris $INSERT_LINE"
         else
