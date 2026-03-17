@@ -33,14 +33,26 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 mkdir -p "$SCRIPTS_DIR"
 chmod 755 "$SCRIPTS_DIR"
 
-# Download semua script proteksi dari Lovable preview
-PREVIEW_URL="https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts"
-echo "📥 Mendownload script proteksi..."
+# Download semua script proteksi dari GitHub
+GITHUB_URL="https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main"
+echo "📥 Mendownload script proteksi dari GitHub..."
 for i in 2 3 4 5 6 7 8 9 10 11 12 13; do
-    curl -sS -o "$SCRIPTS_DIR/installprotect${i}.sh" "$PREVIEW_URL/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh" && echo "   ✅ installprotect${i}.sh" || echo "   ⚠️ Gagal download installprotect${i}.sh"
+    if curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "$GITHUB_URL/installprotect${i}.sh"; then
+        chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"
+        echo "   ✅ installprotect${i}.sh"
+    else
+        rm -f "$SCRIPTS_DIR/installprotect${i}.sh"
+        echo "   ⚠️ Gagal download installprotect${i}.sh"
+    fi
 done
-curl -sS -o "$SCRIPTS_DIR/installbranding.sh" "$PREVIEW_URL/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" && echo "   ✅ installbranding.sh" || echo "   ⚠️ Gagal download installbranding.sh"
-echo "✅ Semua script didownload ke $SCRIPTS_DIR"
+if curl -fsSL -o "$SCRIPTS_DIR/installbranding.sh" "$GITHUB_URL/installbranding.sh"; then
+    chmod +x "$SCRIPTS_DIR/installbranding.sh"
+    echo "   ✅ installbranding.sh"
+else
+    rm -f "$SCRIPTS_DIR/installbranding.sh"
+    echo "   ⚠️ Gagal download installbranding.sh"
+fi
+echo "✅ Download script selesai ke $SCRIPTS_DIR"
 
 # Buat config default jika belum ada
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -222,6 +234,37 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Ambil URL raw script dari GitHub
+     */
+    private function getScriptUrl(string $filename): string
+    {
+        return 'https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/' . $filename;
+    }
+
+    /**
+     * Pastikan script tersedia di server, jika belum maka download otomatis dari GitHub
+     */
+    private function ensureScriptExists(string $filename): bool
+    {
+        $scriptPath = $this->scriptsDir . '/' . $filename;
+
+        if (File::exists($scriptPath)) {
+            return true;
+        }
+
+        $content = @file_get_contents($this->getScriptUrl($filename));
+        if ($content === false || trim($content) === '' || strpos($content, '404: Not Found') !== false) {
+            return false;
+        }
+
+        File::ensureDirectoryExists($this->scriptsDir);
+        File::put($scriptPath, $content);
+        @chmod($scriptPath, 0755);
+
+        return true;
+    }
+
+    /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
     private function checkInstalled($protection)
@@ -266,15 +309,16 @@ class ProtectManagerController extends Controller
             return redirect()->route('admin.protect-manager')->with('error', 'Proteksi tidak ditemukan: ' . $key);
         }
 
-        $scriptFile = $this->scriptsDir . '/install' . $key . '.sh';
-        
-        if (!File::exists($scriptFile)) {
-            return redirect()->route('admin.protect-manager')->with('error', 'Script tidak ditemukan: install' . $key . '.sh — Upload script terlebih dahulu.');
+        $scriptFilename = 'install' . $key . '.sh';
+        $scriptFile = $this->scriptsDir . '/' . $scriptFilename;
+
+        if (!$this->ensureScriptExists($scriptFilename)) {
+            return redirect()->route('admin.protect-manager')->with('error', 'Script tidak ditemukan di server maupun GitHub: ' . $scriptFilename);
         }
 
         // Set environment variables untuk script
         $envVars = sprintf(
-            'BRAND_NAME="%s" BRAND_TEXT="%s" CONTACT_TELEGRAM="%s" BOT_LINK="%s"',
+            'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
             escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
             escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
             escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
@@ -284,18 +328,24 @@ class ProtectManagerController extends Controller
         // Jalankan script
         $output = [];
         $returnVar = 0;
-        exec("cd {$this->panelDir} && bash {$scriptFile} 2>&1", $output, $returnVar);
+        $command = sprintf(
+            'cd %s && %s bash %s 2>&1',
+            escapeshellarg($this->panelDir),
+            $envVars,
+            escapeshellarg($scriptFile)
+        );
+        exec($command, $output, $returnVar);
 
-        $config['protections'][$key]['enabled'] = true;
+        $config['protections'][$key]['enabled'] = ($returnVar === 0);
         $this->saveConfig($config);
 
         $outputText = implode("\n", $output);
-        
+
         if ($returnVar === 0) {
             return redirect()->route('admin.protect-manager')->with('success', "✅ {$config['protections'][$key]['name']} berhasil diinstall!")->with('output', $outputText);
-        } else {
-            return redirect()->route('admin.protect-manager')->with('error', "❌ Gagal install {$config['protections'][$key]['name']}")->with('output', $outputText);
         }
+
+        return redirect()->route('admin.protect-manager')->with('error', "❌ Gagal install {$config['protections'][$key]['name']}")->with('output', $outputText);
     }
 
     /**
@@ -403,31 +453,60 @@ class ProtectManagerController extends Controller
         $selected = $request->input('selected_protections', []);
         $config = $this->getConfig();
         $results = [];
+        $allOutput = [];
+
+        if (empty($selected)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada proteksi yang dipilih.');
+        }
 
         foreach ($selected as $key) {
-            if (!isset($config['protections'][$key])) continue;
-
-            $scriptFile = $this->scriptsDir . '/install' . $key . '.sh';
-            if (!File::exists($scriptFile)) {
-                $results[] = "⚠️ {$config['protections'][$key]['name']}: Script tidak ditemukan";
+            if (!isset($config['protections'][$key])) {
                 continue;
             }
 
+            $scriptFilename = 'install' . $key . '.sh';
+            $scriptFile = $this->scriptsDir . '/' . $scriptFilename;
+
+            if (!$this->ensureScriptExists($scriptFilename)) {
+                $results[] = "⚠️ {$config['protections'][$key]['name']}: Script tidak ditemukan di server maupun GitHub";
+                continue;
+            }
+
+            $envVars = sprintf(
+                'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
+                escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
+                escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
+                escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
+                escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
+            );
+
             $output = [];
             $returnVar = 0;
-            exec("cd {$this->panelDir} && bash {$scriptFile} 2>&1", $output, $returnVar);
+            $command = sprintf(
+                'cd %s && %s bash %s 2>&1',
+                escapeshellarg($this->panelDir),
+                $envVars,
+                escapeshellarg($scriptFile)
+            );
+            exec($command, $output, $returnVar);
 
             if ($returnVar === 0) {
                 $config['protections'][$key]['enabled'] = true;
                 $results[] = "✅ {$config['protections'][$key]['name']}: Berhasil diinstall";
             } else {
+                $config['protections'][$key]['enabled'] = false;
                 $results[] = "❌ {$config['protections'][$key]['name']}: Gagal install";
             }
+
+            $allOutput[] = '[' . $key . ']';
+            $allOutput[] = implode("\n", $output);
         }
 
         $this->saveConfig($config);
 
-        return redirect()->route('admin.protect-manager')->with('success', implode("\n", $results));
+        return redirect()->route('admin.protect-manager')
+            ->with('success', implode("\n", $results))
+            ->with('output', trim(implode("\n\n", $allOutput)));
     }
 }
 PHPEOF
@@ -740,64 +819,64 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
 
 {{-- TAB: Proteksi --}}
 <div id="tab-protections">
-    <form action="{{ route('admin.protect-manager.bulk-install') }}" method="POST">
+    <form id="bulkInstallForm" action="{{ route('admin.protect-manager.bulk-install') }}" method="POST">
         @csrf
+    </form>
 
-        {{-- Select All --}}
-        <div class="select-all-box">
-            <label>
-                <input type="checkbox" class="custom-check" id="selectAll" onclick="toggleAll(this)" style="margin-right: 10px;">
-                Pilih Semua (yang belum terinstall)
-            </label>
-            <button type="submit" class="btn-bulk">🚀 Terapkan yang Dicentang</button>
-        </div>
+    {{-- Select All --}}
+    <div class="select-all-box">
+        <label>
+            <input type="checkbox" class="custom-check" id="selectAll" onclick="toggleAll(this)" style="margin-right: 10px;">
+            Pilih Semua (yang belum terinstall)
+        </label>
+        <button type="submit" form="bulkInstallForm" class="btn-bulk">🚀 Terapkan yang Dicentang</button>
+    </div>
 
-        {{-- Protection Cards --}}
-        <div class="row">
-            @foreach($protections as $key => $prot)
-            <div class="col-md-6">
-                <div class="protect-card {{ $prot['installed'] ? 'installed' : 'not-installed' }}">
-                    <div style="display: flex; align-items: flex-start; justify-content: space-between;">
-                        <div style="display: flex; align-items: flex-start; flex: 1;">
-                            @if(!$prot['installed'])
-                            <input type="checkbox" name="selected_protections[]" value="{{ $key }}" class="custom-check protect-check" style="margin-right: 12px; margin-top: 3px;">
-                            @else
-                            <span style="margin-right: 12px; font-size: 18px;">✅</span>
-                            @endif
-                            <div style="flex: 1;">
-                                <div class="protect-title">{{ $prot['name'] }}</div>
-                                <div class="protect-desc">{{ $prot['description'] }}</div>
-                                <div style="margin-top: 8px;">
-                                    @if($prot['installed'])
-                                        <span class="badge-installed">● Terinstall</span>
-                                    @else
-                                        <span class="badge-not-installed">○ Belum Install</span>
-                                    @endif
-                                    <span style="color: #475569; font-size: 11px; margin-left: 10px;">{{ $key }}</span>
-                                </div>
+    {{-- Protection Cards --}}
+    <div class="row">
+        @foreach($protections as $key => $prot)
+        <div class="col-md-6">
+            <div class="protect-card {{ $prot['installed'] ? 'installed' : 'not-installed' }}">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+                    <div style="display: flex; align-items: flex-start; flex: 1;">
+                        @if(!$prot['installed'])
+                        <input type="checkbox" name="selected_protections[]" value="{{ $key }}" form="bulkInstallForm" class="custom-check protect-check" style="margin-right: 12px; margin-top: 3px;">
+                        @else
+                        <span style="margin-right: 12px; font-size: 18px;">✅</span>
+                        @endif
+                        <div style="flex: 1;">
+                            <div class="protect-title">{{ $prot['name'] }}</div>
+                            <div class="protect-desc">{{ $prot['description'] }}</div>
+                            <div style="margin-top: 8px;">
+                                @if($prot['installed'])
+                                    <span class="badge-installed">● Terinstall</span>
+                                @else
+                                    <span class="badge-not-installed">○ Belum Install</span>
+                                @endif
+                                <span style="color: #475569; font-size: 11px; margin-left: 10px;">{{ $key }}</span>
                             </div>
                         </div>
-                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                            @if(!$prot['installed'])
-                            <form action="{{ route('admin.protect-manager.install') }}" method="POST" style="display:inline;">
-                                @csrf
-                                <input type="hidden" name="protection_key" value="{{ $key }}">
-                                <button type="submit" class="btn-install" onclick="return confirm('Install {{ $prot['name'] }}?')">Install</button>
-                            </form>
-                            @else
-                            <form action="{{ route('admin.protect-manager.uninstall') }}" method="POST" style="display:inline;">
-                                @csrf
-                                <input type="hidden" name="protection_key" value="{{ $key }}">
-                                <button type="submit" class="btn-uninstall" onclick="return confirm('Uninstall {{ $prot['name'] }}? Ini akan restore dari backup.')">Uninstall</button>
-                            </form>
-                            @endif
-                        </div>
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                        @if(!$prot['installed'])
+                        <form action="{{ route('admin.protect-manager.install') }}" method="POST" style="display:inline;">
+                            @csrf
+                            <input type="hidden" name="protection_key" value="{{ $key }}">
+                            <button type="submit" class="btn-install" onclick="return confirm('Install {{ $prot['name'] }}?')">Install</button>
+                        </form>
+                        @else
+                        <form action="{{ route('admin.protect-manager.uninstall') }}" method="POST" style="display:inline;">
+                            @csrf
+                            <input type="hidden" name="protection_key" value="{{ $key }}">
+                            <button type="submit" class="btn-uninstall" onclick="return confirm('Uninstall {{ $prot['name'] }}? Ini akan restore dari backup.')">Uninstall</button>
+                        </form>
+                        @endif
                     </div>
                 </div>
             </div>
-            @endforeach
         </div>
-    </form>
+        @endforeach
+    </div>
 </div>
 
 {{-- TAB: Konfigurasi --}}
@@ -897,10 +976,10 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
         </div>
 
         <div style="margin-top: 25px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 8px;">
-            <h4 style="color: #fbbf24; font-size: 14px; margin-bottom: 10px;">💡 Download Script dari Lovable</h4>
+            <h4 style="color: #fbbf24; font-size: 14px; margin-bottom: 10px;">💡 Download Script dari GitHub</h4>
             <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">Jalankan perintah ini via SSH untuk download semua script sekaligus:</p>
             <code style="color: #93c5fd; font-size: 11px; display: block; padding: 10px; background: #020617; border-radius: 6px; word-break: break-all;">
-SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p $SCRIPTS_DIR && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -sS -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && curl -sS -o "$SCRIPTS_DIR/installbranding.sh" "https://id-preview--812b0b8a-c323-4347-8ac1-05d2ac8cc68f.lovable.app/scripts/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" && echo "✅ Semua script berhasil didownload!"
+SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p "$SCRIPTS_DIR" && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && curl -fsSL -o "$SCRIPTS_DIR/installbranding.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installbranding.sh" && chmod +x "$SCRIPTS_DIR/installbranding.sh" || true && echo "✅ Download script selesai!"
             </code>
         </div>
     </div>
