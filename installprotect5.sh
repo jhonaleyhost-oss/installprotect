@@ -5,7 +5,7 @@ set -e
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
 BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
-BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+BRAND_TEXT="${BRAND_TEXT:-Protected}"
 CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
 BOT_LINK="${BOT_LINK:-@upgradeuser_bot}"
 
