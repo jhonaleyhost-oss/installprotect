@@ -265,13 +265,18 @@ LAYOUT_FILES=(
   "/var/www/pterodactyl/resources/views/layouts/auth.blade.php"
 )
 
+BRANDING_FOUND=0
+
 inject_branding() {
   local FILE="$1"
   local LABEL="$2"
 
   if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+    echo "⚠️ File $LABEL tidak ditemukan: $FILE"
     return
   fi
+
+  BRANDING_FOUND=1
 
   if grep -q "BRANDING_JHONALEY" "$FILE"; then
     echo "⚠️ Branding sudah ada di $LABEL, skip."
@@ -282,16 +287,9 @@ inject_branding() {
     cp "$FILE" "${FILE}.bak_${TIMESTAMP}"
   fi
 
-  python3 << BRANDING_EOF
-layout = "$FILE"
-
-with open(layout, "r") as f:
-    content = f.read()
-
-if "BRANDING_JHONALEY" in content:
-    exit(0)
-
-branding_css = """
+  # Buat file branding sementara
+  BRANDING_TMP="/tmp/branding_inject_${TIMESTAMP}.html"
+  cat > "$BRANDING_TMP" << 'BRANDHTML'
 <!-- BRANDING_JHONALEY: Custom Branding -->
 <style>
   .jhonaley-footer {
@@ -389,9 +387,6 @@ branding_css = """
     padding-bottom: 50px !important;
   }
 </style>
-"""
-
-branding_html = """
 <!-- BRANDING_JHONALEY: Footer -->
 <div class="jhonaley-footer">
   <div class="jt-inner">
@@ -406,21 +401,27 @@ branding_html = """
     <span class="jt-promo">Butuh panel yang anti mokad? Langsung aja ke <a href="https://t.me/upgradeuser_bot" target="_blank">@upgradeuser_bot</a></span>
   </div>
 </div>
-"""
+BRANDHTML
 
-if "</body>" in content:
-    content = content.replace("</body>", branding_css + branding_html + "\\n</body>")
-elif "</html>" in content:
-    content = content.replace("</html>", branding_css + branding_html + "\\n</html>")
-else:
-    content += branding_css + branding_html
+  # Inject sebelum </body> menggunakan awk (tanpa python3)
+  if grep -q "</body>" "$FILE"; then
+    awk -v branding="$BRANDING_TMP" '
+      /<\/body>/ { while ((getline line < branding) > 0) print line; close(branding) }
+      { print }
+    ' "$FILE" > "${FILE}.tmp" && mv "${FILE}.tmp" "$FILE"
+    echo "✅ Branding diinjeksi sebelum </body> di $LABEL"
+  elif grep -q "</html>" "$FILE"; then
+    awk -v branding="$BRANDING_TMP" '
+      /<\/html>/ { while ((getline line < branding) > 0) print line; close(branding) }
+      { print }
+    ' "$FILE" > "${FILE}.tmp" && mv "${FILE}.tmp" "$FILE"
+    echo "✅ Branding diinjeksi sebelum </html> di $LABEL"
+  else
+    cat "$BRANDING_TMP" >> "$FILE"
+    echo "✅ Branding ditambahkan di akhir $LABEL"
+  fi
 
-with open(layout, "w") as f:
-    f.write(content)
-
-print("✅ Branding dipasang di " + layout)
-BRANDING_EOF
-
+  rm -f "$BRANDING_TMP"
   echo "✅ Branding dipasang di $LABEL"
 }
 
