@@ -274,7 +274,24 @@ class ProtectManagerController extends Controller
         }
 
         $content = File::get($targetFile);
-        return strpos($content, $protection['marker']) !== false;
+
+        // Cek marker spesifik dulu, lalu fallback ke pola proteksi umum
+        if (strpos($content, $protection['marker']) !== false) {
+            return true;
+        }
+
+        // Semua script proteksi menulis cek "$user->id !== 1" atau "$authUser->id !== 1"
+        // yang TIDAK ada di file Pterodactyl asli
+        if (strpos($content, '->id !== 1') !== false) {
+            return true;
+        }
+
+        // Fallback: cek kata kunci branding yang umum ditulis script
+        if (stripos($content, 'jhonaley') !== false || stripos($content, 'akses ditolak') !== false) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -422,7 +439,64 @@ class ProtectManagerController extends Controller
 
         $this->saveConfig($config);
 
-        return redirect()->route('admin.protect-manager')->with('success', '✅ Konfigurasi berhasil diupdate!');
+        $messages = ['✅ Konfigurasi berhasil diupdate!'];
+        $outputBlocks = [];
+
+        // Re-apply semua proteksi yang sudah terpasang agar teks brand diperbarui
+        $envVars = sprintf(
+            'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
+            escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
+            escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
+            escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
+            escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
+        );
+
+        $reapplied = 0;
+        foreach ($config['protections'] as $key => $prot) {
+            if (!$this->checkInstalled($key, $prot)) {
+                continue;
+            }
+
+            $scriptFilename = 'install' . $key . '.sh';
+            $scriptFile = $this->scriptsDir . '/' . $scriptFilename;
+
+            if (!$this->ensureScriptExists($scriptFilename)) {
+                continue;
+            }
+
+            $output = [];
+            $returnVar = 0;
+            $command = sprintf(
+                'cd %s && %s bash %s 2>&1',
+                escapeshellarg($this->panelDir),
+                $envVars,
+                escapeshellarg($scriptFile)
+            );
+            exec($command, $output, $returnVar);
+
+            if ($returnVar === 0) {
+                $config['protections'][$key]['enabled'] = true;
+                $reapplied++;
+            }
+
+            $outputText = trim(implode("\n", $output));
+            if ($outputText !== '') {
+                $outputBlocks[] = '[' . $key . ']' . "\n" . $outputText;
+            }
+        }
+
+        if ($reapplied > 0) {
+            $this->saveConfig($config);
+            $messages[] = "🔄 {$reapplied} proteksi otomatis diterapkan ulang dengan brand baru.";
+        }
+
+        $redirect = redirect()->route('admin.protect-manager')->with('success', implode("\n", $messages));
+
+        if (!empty($outputBlocks)) {
+            $redirect = $redirect->with('output', trim(implode("\n\n", $outputBlocks)));
+        }
+
+        return $redirect;
     }
 
     /**

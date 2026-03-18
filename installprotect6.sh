@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/Settings/IndexController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -93,6 +96,10 @@ class IndexController extends Controller
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|Jhonaley Protect|${BRAND_TEXT}|g" "$REMOTE_PATH" 2>/dev/null || true
+sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$REMOTE_PATH" 2>/dev/null || true
 
 echo "✅ Proteksi Anti Akses Settings berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"

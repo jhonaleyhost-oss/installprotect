@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Api/Client/Servers/FileController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -265,6 +268,9 @@ class FileController extends ClientApiController
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|Anda tidak memiliki akses ke server ini|${BRAND_TEXT} - Akses ditolak|g" "$REMOTE_PATH" 2>/dev/null || true
 
 echo "✅ Proteksi Anti Akses Server File Controller berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"

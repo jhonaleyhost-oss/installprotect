@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/Nodes/NodeController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -61,6 +64,10 @@ class NodeController extends Controller
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|Protect By Jhonaley|${BRAND_TEXT}|g" "$REMOTE_PATH" 2>/dev/null || true
+sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$REMOTE_PATH" 2>/dev/null || true
 
 echo "✅ Proteksi Anti Akses Nodes berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"

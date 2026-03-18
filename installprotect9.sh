@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Services/Servers/DetailsModificationService.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -75,6 +78,9 @@ class DetailsModificationService
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|Akses ditolak: hanya admin utama yang bisa mengubah detail server.|${BRAND_TEXT} - Akses ditolak.|g" "$REMOTE_PATH" 2>/dev/null || true
 
 echo "✅ Proteksi Anti Modifikasi Server berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"

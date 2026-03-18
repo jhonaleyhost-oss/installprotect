@@ -8,6 +8,9 @@
 
 set -e
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 PANEL_DIR="/var/www/pterodactyl"
 TIMESTAMP=$(date +%Y-%m-%d-%H-%M-%S)
 
@@ -176,6 +179,12 @@ echo "✅ BAGIAN 2 SELESAI"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo "🧹 Membersihkan cache..."
+
+# Apply brand customization
+if [ -f "$API_CONTROLLER" ]; then
+  sed -i "s|Akses Application API tidak diizinkan|${BRAND_TEXT} - Akses ditolak|g" "$API_CONTROLLER" 2>/dev/null || true
+fi
+
 cd "$PANEL_DIR"
 php artisan route:clear 2>/dev/null || true
 php artisan config:clear 2>/dev/null || true

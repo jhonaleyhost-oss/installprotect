@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Api/Client/Servers/ServerController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -62,7 +65,13 @@ EOF
 
 chmod 644 "$REMOTE_PATH"
 
-echo "âœ… Proteksi Anti Akses Server Controller berhasil dipasang!"
+# Apply brand customization - replace the unicode abort message
+ABORT_LINE=$(grep -n "abort(403" "$REMOTE_PATH" | head -1 | cut -d: -f1)
+if [ -n "$ABORT_LINE" ]; then
+  sed -i "${ABORT_LINE}s|abort(403,.*|abort(403, '${BRAND_TEXT} - Akses Ditolak. Hanya Bisa Melihat Server Milik Sendiri.');|" "$REMOTE_PATH" 2>/dev/null || true
+fi
+
+echo "✅ Proteksi Anti Akses Server Controller berhasil dipasang!"
 echo "ðŸ“‚ Lokasi file: $REMOTE_PATH"
 echo "ðŸ—‚ï¸ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
 echo "ðŸ”’ Hanya Admin (ID 1) yang bisa Akses Server Controller."

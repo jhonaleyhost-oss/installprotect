@@ -1,5 +1,9 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
+
 echo "🚀 Memasang proteksi Anti Tautan Server..."
 
 # File paths
@@ -162,6 +166,11 @@ cat > "$INDEX_FILE" << 'EOF'
     </script>
 @endsection
 EOF
+
+# Apply brand customization to index file
+sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$INDEX_FILE" 2>/dev/null || true
+sed -i "s|@danangvalentp|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true
+sed -i "s|@danangvalentpl|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true
 
 echo "✅ Index file berhasil diproteksi (Create New bisa untuk semua admin)"
 

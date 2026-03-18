@@ -1,5 +1,9 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/UserController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -204,6 +208,11 @@ class UserController extends Controller
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|protect by Jhonaley Tech|${BRAND_TEXT}|g" "$REMOTE_PATH" 2>/dev/null || true
+sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$REMOTE_PATH" 2>/dev/null || true
+
 echo "✅ Proteksi UserController.php berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"
 echo "🗂️ Backup file lama: $BACKUP_PATH"

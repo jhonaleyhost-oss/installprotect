@@ -1,5 +1,9 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
+
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
 echo "🚀 Memasang proteksi Nodes + Client Account API + Application API User + Application API Controller..."
@@ -951,6 +955,19 @@ fi
 echo ""
 echo "✅ BAGIAN 5 SELESAI: Proteksi Locations terpasang"
 echo ""
+
+# ===================================================================
+# APPLY BRAND CUSTOMIZATION to all modified files
+# ===================================================================
+echo "🎨 Menerapkan kustomisasi brand..."
+for MODIFIED_FILE in "$CONTROLLER" "$NODE_LIST" "$ACCT_CTRL" "$APP_USER_CTRL" "$API_CTRL" "$MIDDLEWARE_FILE" "$LOC_CTRL"; do
+  if [ -n "$MODIFIED_FILE" ] && [ -f "$MODIFIED_FILE" ]; then
+    sed -i "s|protect by Jhonaley Tech|${BRAND_TEXT}|g" "$MODIFIED_FILE" 2>/dev/null || true
+    sed -i "s|Akses ditolak - protect by Jhonaley Tech|${BRAND_TEXT} - Akses ditolak|g" "$MODIFIED_FILE" 2>/dev/null || true
+    sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$MODIFIED_FILE" 2>/dev/null || true
+  fi
+done
+echo "✅ Brand customization diterapkan"
 
 # ===================================================================
 # CLEAR CACHE
