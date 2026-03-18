@@ -270,8 +270,13 @@ if [ -n "$SIDEBAR_FOUND" ]; then
   grep -n -i "nest" "$SIDEBAR_FOUND" | head -10
   echo ""
 
-  python3 << PYEOF3
-sidebar = "$SIDEBAR_FOUND"
+  SIDEBAR_TEMP=$(mktemp)
+  export SIDEBAR_FOUND SIDEBAR_TEMP
+  python3 << 'PYEOF3'
+import os
+
+sidebar = os.environ["SIDEBAR_FOUND"]
+sidebar_temp = os.environ["SIDEBAR_TEMP"]
 
 with open(sidebar, "r") as f:
     content = f.read()
@@ -279,8 +284,6 @@ with open(sidebar, "r") as f:
 if "PROTEKSI_NESTS_SIDEBAR" in content:
     print("⚠️ Sidebar Nests sudah diproteksi")
     exit(0)
-
-import re
 
 lines = content.split("\n")
 new_lines = []
@@ -314,11 +317,14 @@ while i < len(lines):
     new_lines.append(line)
     i += 1
 
-with open(sidebar, "w") as f:
+with open(sidebar_temp, "w") as f:
     f.write("\n".join(new_lines))
 
-print("✅ Menu Nests disembunyikan dari sidebar")
+print("✅ Temp sidebar berhasil dibuat")
 PYEOF3
+  cat "$SIDEBAR_TEMP" > "$SIDEBAR_FOUND"
+  rm -f "$SIDEBAR_TEMP"
+  echo "✅ Menu Nests disembunyikan dari sidebar"
 else
   echo "⚠️ File sidebar tidak ditemukan."
 fi
