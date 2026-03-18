@@ -605,7 +605,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Butuh Panel Legal yang anti mokad? Langsung Aja ke <a href="https://t.me/$BOT_USERNAME. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
+    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Butuh Panel Legal yang anti mokad? Langsung Aja ke <a href="https://t.me/$BOT_USERNAME"target="_blank">$BOT_LINK_HTML</a>. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }
