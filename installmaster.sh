@@ -253,12 +253,26 @@ class ProtectManagerController extends Controller
     /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
-    private function checkInstalled($protection)
+    private function checkInstalled($protectionKey, $protection)
     {
+        if ($protectionKey === 'protect5') {
+            $adminLayout = $this->panelDir . '/resources/views/layouts/admin.blade.php';
+            $clientHome = $this->panelDir . '/resources/scripts/components/dashboard/DashboardContainer.tsx';
+
+            $hasBranding = File::exists($adminLayout)
+                && strpos(File::get($adminLayout), 'BRANDING_JHONALEY') !== false;
+
+            $hasWelcomeBanner = File::exists($clientHome)
+                && strpos(File::get($clientHome), 'WELCOME_JHONALEY') !== false;
+
+            return $hasBranding || $hasWelcomeBanner;
+        }
+
         $targetFile = $this->panelDir . '/' . $protection['target_file'];
         if (!File::exists($targetFile)) {
             return false;
         }
+
         $content = File::get($targetFile);
         return strpos($content, $protection['marker']) !== false;
     }
@@ -273,7 +287,7 @@ class ProtectManagerController extends Controller
 
         // Cek status install setiap proteksi
         foreach ($config['protections'] as $key => &$prot) {
-            $prot['installed'] = $this->checkInstalled($prot);
+            $prot['installed'] = $this->checkInstalled($key, $prot);
         }
 
         return view('admin.protect-manager', [
