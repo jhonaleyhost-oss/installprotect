@@ -427,13 +427,17 @@ echo "🎨 Memasang branding $BRAND_NAME..."
 
 LAYOUT_FILES=(
   "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
-  "/var/www/pterodactyl/resources/views/layouts/master.blade.php"
-  "/var/www/pterodactyl/resources/views/layouts/auth.blade.php"
 )
-WRAPPER_LAYOUT="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
 
-BRANDING_TARGET_FOUND=0
-BRANDING_APPLIED_COUNT=0
+# Cleanup branding lama dari master.blade.php dan auth.blade.php jika ada
+for CLEANUP_FILE in "/var/www/pterodactyl/resources/views/layouts/master.blade.php" "/var/www/pterodactyl/resources/views/layouts/auth.blade.php"; do
+  if [ -f "$CLEANUP_FILE" ] && grep -q "BRANDING_JHONALEY" "$CLEANUP_FILE" 2>/dev/null; then
+    cleanup_old_branding "$CLEANUP_FILE"
+    echo "🧹 Branding lama dihapus dari $(basename "$CLEANUP_FILE")"
+  fi
+done
+
+BRANDING_FOUND=0
 
 inject_branding() {
   local FILE="$1"
@@ -444,7 +448,7 @@ inject_branding() {
     return
   fi
 
-  BRANDING_TARGET_FOUND=1
+  BRANDING_FOUND=1
 
   if ! can_modify_file "$FILE"; then
     echo "⚠️ File $LABEL tidak writable, skip branding di file ini"
@@ -569,13 +573,7 @@ BRANDHTML
 
   inject_before_closing "$FILE" "$BRANDING_TMP" "$LABEL"
   rm -f "$BRANDING_TMP"
-
-  if grep -q "BRANDING_JHONALEY" "$FILE" 2>/dev/null; then
-    BRANDING_APPLIED_COUNT=$((BRANDING_APPLIED_COUNT + 1))
-    echo "✅ Branding diperbarui di $LABEL"
-  else
-    echo "⚠️ Branding gagal terpasang di $LABEL"
-  fi
+  echo "✅ Branding diperbarui di $LABEL"
 }
 
 for LF in "${LAYOUT_FILES[@]}"; do
@@ -584,15 +582,6 @@ for LF in "${LAYOUT_FILES[@]}"; do
   fi
 done
 
-if [ "$BRANDING_APPLIED_COUNT" -eq 0 ] && [ -f "$WRAPPER_LAYOUT" ]; then
-  echo "↪️ Branding utama belum berhasil, mencoba fallback ke wrapper.blade.php..."
-  inject_branding "$WRAPPER_LAYOUT" "$(basename "$WRAPPER_LAYOUT")"
-fi
-
-if [ "$BRANDING_TARGET_FOUND" -eq 0 ] && [ -f "$WRAPPER_LAYOUT" ]; then
-  inject_branding "$WRAPPER_LAYOUT" "$(basename "$WRAPPER_LAYOUT")"
-fi
-
 for LF in "${LAYOUT_FILES[@]}"; do
   if [ -f "$LF" ] && grep -q "<title>" "$LF"; then
     sed -i "s|<title>.*</title>|<title>Pterodactyl - $SAFE_TITLE</title>|g" "$LF" 2>/dev/null || true
@@ -600,11 +589,7 @@ for LF in "${LAYOUT_FILES[@]}"; do
   fi
 done
 
-if [ "$BRANDING_APPLIED_COUNT" -gt 0 ]; then
-  echo "✅ Branding selesai!"
-else
-  echo "⚠️ Branding tidak terpasang di layout mana pun"
-fi
+echo "✅ Branding selesai!"
 
 # ============================================================
 # === BAGIAN 3: Welcome Banner di Client Dashboard ===
@@ -716,6 +701,66 @@ WELCOME_EOF
 fi
 
 # ===================================================================
+# RE-INJECT SIDEBAR PROTECT MANAGER (jika hilang setelah modifikasi admin.blade.php)
+# ===================================================================
+ADMIN_LAYOUT="/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
+if [ -f "$ADMIN_LAYOUT" ] && ! grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$ADMIN_LAYOUT" 2>/dev/null; then
+  echo "🔧 Re-inject sidebar Protect Manager..."
+
+  SIDEBAR_SNIPPET=$(mktemp)
+  cat > "$SIDEBAR_SNIPPET" << 'SIDEBAR_PM_EOF'
+                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
+                @if(Auth::user() && Auth::user()->id === 1)
+                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
+                    <a href="{{ route('admin.protect-manager') }}">
+                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
+                    </a>
+                </li>
+                @endif
+                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
+SIDEBAR_PM_EOF
+
+  # Cari posisi: sebelum Settings atau sebelum </ul> terakhir
+  INSERT_LINE=""
+  SETTINGS_LINE=$(grep -n "admin.settings" "$ADMIN_LAYOUT" 2>/dev/null | head -1 | cut -d: -f1)
+  if [ -n "$SETTINGS_LINE" ]; then
+    # Cari <li sebelum baris Settings
+    INSERT_LINE=$((SETTINGS_LINE - 1))
+    while [ "$INSERT_LINE" -gt 0 ]; do
+      if sed -n "${INSERT_LINE}p" "$ADMIN_LAYOUT" | grep -q "<li"; then
+        INSERT_LINE=$((INSERT_LINE - 1))
+        break
+      fi
+      INSERT_LINE=$((INSERT_LINE - 1))
+    done
+  fi
+
+  if [ -z "$INSERT_LINE" ] || [ "$INSERT_LINE" -le 0 ]; then
+    # Fallback: sebelum </ul> terakhir
+    INSERT_LINE=$(grep -n "</ul>" "$ADMIN_LAYOUT" | tail -1 | cut -d: -f1)
+    if [ -n "$INSERT_LINE" ]; then
+      INSERT_LINE=$((INSERT_LINE - 1))
+    fi
+  fi
+
+  if [ -n "$INSERT_LINE" ] && [ "$INSERT_LINE" -gt 0 ]; then
+    TEMP_LAYOUT=$(mktemp)
+    head -n "$INSERT_LINE" "$ADMIN_LAYOUT" > "$TEMP_LAYOUT"
+    cat "$SIDEBAR_SNIPPET" >> "$TEMP_LAYOUT"
+    tail -n +"$((INSERT_LINE + 1))" "$ADMIN_LAYOUT" >> "$TEMP_LAYOUT"
+    if cat "$TEMP_LAYOUT" > "$ADMIN_LAYOUT" 2>/dev/null; then
+      echo "✅ Sidebar Protect Manager berhasil di-re-inject"
+    else
+      echo "⚠️ Gagal re-inject sidebar, skip"
+    fi
+    rm -f "$TEMP_LAYOUT"
+  else
+    echo "⚠️ Tidak bisa menemukan posisi sidebar untuk re-inject"
+  fi
+  rm -f "$SIDEBAR_SNIPPET"
+fi
+
+# ===================================================================
 # CLEAR CACHE
 # ===================================================================
 cd /var/www/pterodactyl
@@ -729,7 +774,7 @@ echo "✅ INSTALLPROTECT5 SELESAI!"
 echo "==========================================="
 echo "🔒 Menu Nests disembunyikan (selain ID 1)"
 echo "🔒 Akses NestController diblock (selain ID 1)"
-echo "🎨 Branding footer $BRAND_NAME terpasang"
+echo "🎨 Branding footer $BRAND_NAME terpasang (hanya admin)"
 echo "📝 Title panel diubah"
 echo "📋 Welcome banner terpasang di client dashboard"
 echo "📱 Kontak: $CONTACT_TELEGRAM"
