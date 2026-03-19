@@ -81,7 +81,13 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
             "name": "Nests + Branding + Welcome Banner",
             "description": "Sembunyikan Nests, tambah branding footer & welcome banner",
             "marker": "PROTEKSI_JHONALEY",
-            "target_file": "resources/views/layouts/admin.blade.php",
+            "target_file": "app/Http/Controllers/Admin/Nests/NestController.php",
+            "extra_files": [
+                "app/Http/Controllers/Admin/Nests/EggController.php",
+                "resources/views/layouts/admin.blade.php",
+                "resources/views/layouts/master.blade.php",
+                "resources/views/templates/wrapper.blade.php"
+            ],
             "enabled": false
         },
         "protect6": {
@@ -298,8 +304,10 @@ class ProtectManagerController extends Controller
 
             case 'protect6':
                 return $containsAny('app/Http/Controllers/Admin/Settings/IndexController.php', [
-                    'Jhonaley Protect - Akses ditolak❌',
-                    'Jhonaley Protect t.me/Jhonaley - Akses ditolak',
+                    'Jhonaley Protect - Akses ditolak',
+                    'Protect By Jhonaley',
+                    'Akses ditolak',
+                    '$user->id !== 1',
                 ]);
 
             case 'protect7':
@@ -317,7 +325,9 @@ class ProtectManagerController extends Controller
             case 'protect9':
                 return $containsAny('app/Services/Servers/DetailsModificationService.php', [
                     'hanya admin utama yang bisa mengubah detail server',
-                    'Akses ditolak: hanya admin utama yang bisa mengubah detail server.',
+                    'Protect By Jhonaley',
+                    'Akses ditolak',
+                    '$user->id !== 1',
                 ]);
 
             case 'protect10':
@@ -442,34 +452,49 @@ class ProtectManagerController extends Controller
             return redirect()->route('admin.protect-manager')->with('error', 'Proteksi tidak ditemukan.');
         }
 
-        $targetFile = $this->panelDir . '/' . $config['protections'][$key]['target_file'];
+        $prot = $config['protections'][$key];
         
-        // Cari backup terbaru
-        $dir = dirname($targetFile);
-        $basename = basename($targetFile);
-        $backups = glob($dir . '/' . $basename . '.bak_*');
-        
-        if (empty($backups)) {
-            return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada backup ditemukan untuk ' . $config['protections'][$key]['name'] . '. Tidak bisa uninstall.');
+        // Kumpulkan semua file yang perlu di-restore
+        $filesToRestore = [$prot['target_file']];
+        if (!empty($prot['extra_files'])) {
+            $filesToRestore = array_merge($filesToRestore, $prot['extra_files']);
         }
 
-        // Ambil backup terbaru
-        sort($backups);
-        $latestBackup = end($backups);
+        $restoredCount = 0;
+        $errors = [];
 
-        // Restore
-        if (File::exists($latestBackup)) {
-            File::copy($latestBackup, $targetFile);
-            $config['protections'][$key]['enabled'] = false;
-            $this->saveConfig($config);
+        foreach ($filesToRestore as $relPath) {
+            $targetFile = $this->panelDir . '/' . $relPath;
+            $dir = dirname($targetFile);
+            $basename = basename($targetFile);
+            $backups = glob($dir . '/' . $basename . '.bak_*');
 
-            // Clear cache
-            exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+            if (empty($backups)) {
+                continue; // Skip file tanpa backup
+            }
 
-            return redirect()->route('admin.protect-manager')->with('success', "✅ {$config['protections'][$key]['name']} berhasil di-uninstall! (Restored dari backup)");
+            sort($backups);
+            $latestBackup = end($backups);
+
+            if (File::exists($latestBackup)) {
+                File::copy($latestBackup, $targetFile);
+                $restoredCount++;
+            } else {
+                $errors[] = $relPath;
+            }
         }
 
-        return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore backup.');
+        if ($restoredCount === 0 && !empty($errors)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore backup untuk ' . $prot['name']);
+        }
+
+        $config['protections'][$key]['enabled'] = false;
+        $this->saveConfig($config);
+
+        // Clear cache
+        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+
+        return redirect()->route('admin.protect-manager')->with('success', "✅ {$prot['name']} berhasil di-uninstall! ({$restoredCount} file di-restore)");
     }
 
     /**
