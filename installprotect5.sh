@@ -41,7 +41,13 @@ SAFE_TITLE=$(sed_escape "$BRAND_NAME")
 
 can_modify_file() {
   local file="$1"
-  [ -f "$file" ] && { [ -w "$file" ] || [ -w "$(dirname "$file")" ]; }
+  if [ -f "$file" ] && [ -w "$file" ]; then
+    return 0
+  fi
+
+  local dir
+  dir=$(dirname "$file")
+  [ -w "$dir" ]
 }
 
 write_temp_to_target() {
@@ -49,11 +55,17 @@ write_temp_to_target() {
   local target_file="$2"
   local label="$3"
 
-  if cp "$temp_file" "$target_file" 2>/dev/null; then
-    return 0
+  if [ -f "$target_file" ]; then
+    chmod u+w "$target_file" 2>/dev/null || true
+    chown --reference="$target_file" "$temp_file" 2>/dev/null || true
+    chmod --reference="$target_file" "$temp_file" 2>/dev/null || true
   fi
 
   if cat "$temp_file" > "$target_file" 2>/dev/null; then
+    return 0
+  fi
+
+  if cp "$temp_file" "$target_file" 2>/dev/null; then
     return 0
   fi
 
