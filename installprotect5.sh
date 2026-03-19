@@ -316,89 +316,6 @@ if [ -z "$SIDEBAR_FOUND" ]; then
   fi
 fi
 
-ensure_protect_manager_sidebar() {
-  local CANDIDATES=(
-    "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
-    "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
-    "/var/www/pterodactyl/resources/views/layouts/app.blade.php"
-  )
-  local TARGET=""
-
-  for CANDIDATE in "${CANDIDATES[@]}"; do
-    if [ -f "$CANDIDATE" ]; then
-      TARGET="$CANDIDATE"
-      if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR\|admin.protect-manager\|Settings\|Configuration" "$CANDIDATE" 2>/dev/null; then
-        break
-      fi
-    fi
-  done
-
-  if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-    echo "⚠️ File sidebar Protect Manager tidak ditemukan untuk dipulihkan"
-    return 0
-  fi
-
-  if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR\|admin.protect-manager" "$TARGET" 2>/dev/null; then
-    echo "ℹ️ Sidebar Protect Manager tetap ada di $(basename "$TARGET")"
-    return 0
-  fi
-
-  if ! can_modify_file "$TARGET"; then
-    echo "⚠️ Tidak bisa memulihkan sidebar Protect Manager karena file tidak writable: $TARGET"
-    return 0
-  fi
-
-  cp "$TARGET" "${TARGET}.bak_pm_guard_${TIMESTAMP}" 2>/dev/null || true
-
-  local ANCHOR_LINE
-  local TOTAL_LINES
-  local INSERT_LINE
-  local TEMP_FILE
-
-  ANCHOR_LINE=$(grep -n "Settings\|settings\|Configuration" "$TARGET" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
-  if [ -z "$ANCHOR_LINE" ]; then
-    ANCHOR_LINE=$(grep -n "</ul>" "$TARGET" | tail -1 | cut -d: -f1)
-  fi
-
-  if [ -z "$ANCHOR_LINE" ]; then
-    echo "⚠️ Tidak menemukan anchor untuk memulihkan sidebar Protect Manager di $TARGET"
-    return 0
-  fi
-
-  TOTAL_LINES=$(wc -l < "$TARGET")
-  INSERT_LINE=$ANCHOR_LINE
-  for i in $(seq "$ANCHOR_LINE" $((ANCHOR_LINE + 15))); do
-    if [ "$i" -gt "$TOTAL_LINES" ]; then break; fi
-    if awk "NR==$i" "$TARGET" | grep -q "</li>"; then
-      INSERT_LINE=$i
-      break
-    fi
-  done
-
-  TEMP_FILE=$(mktemp)
-  head -n "$INSERT_LINE" "$TARGET" > "$TEMP_FILE"
-  cat >> "$TEMP_FILE" << 'PMEOF'
-                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
-                @if(Auth::user() && Auth::user()->id === 1)
-                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
-                    <a href="{{ route('admin.protect-manager') }}">
-                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
-                    </a>
-                </li>
-                @endif
-                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
-PMEOF
-  tail -n +"$((INSERT_LINE + 1))" "$TARGET" >> "$TEMP_FILE"
-
-  if write_temp_to_target "$TEMP_FILE" "$TARGET" "$TARGET"; then
-    echo "✅ Sidebar Protect Manager dipulihkan di $(basename "$TARGET")"
-  else
-    echo "⚠️ Gagal memulihkan sidebar Protect Manager di $TARGET"
-  fi
-
-  rm -f "$TEMP_FILE"
-}
-
 if [ -n "$SIDEBAR_FOUND" ]; then
   echo "📂 Sidebar ditemukan: $SIDEBAR_FOUND"
 
@@ -433,27 +350,27 @@ i = 0
 while i < len(lines):
     line = lines[i]
 
-    if '<li' in line:
-        block = [line]
-        i += 1
-        li_depth = line.count('<li') - line.count('</li>')
+    if ('admin.nests' in line or "route('admin.nests')" in line) and 'admin.nests.view' not in line and 'admin.nests.egg' not in line:
+        li_start = len(new_lines) - 1
+        while li_start >= 0 and '<li' not in new_lines[li_start]:
+            li_start -= 1
 
-        while i < len(lines) and li_depth > 0:
-            curr = lines[i]
-            block.append(curr)
-            li_depth += curr.count('<li') - curr.count('</li>')
+        if li_start >= 0:
+            new_lines.insert(li_start, "{{-- PROTEKSI_NESTS_SIDEBAR --}}")
+            new_lines.insert(li_start, "@if((int) Auth::user()->id === 1)")
+
+            new_lines.append(line)
             i += 1
 
-        block_text = "\n".join(block)
-        if ('admin.nests' in block_text or "route('admin.nests')" in block_text) and 'admin.nests.view' not in block_text and 'admin.nests.egg' not in block_text:
-            new_lines.append("{{-- PROTEKSI_NESTS_SIDEBAR --}}")
-            new_lines.append("@if((int) Auth::user()->id === 1)")
-            new_lines.extend(block)
+            li_depth = 1
+            while i < len(lines) and li_depth > 0:
+                curr = lines[i]
+                li_depth += curr.count('<li') - curr.count('</li')
+                new_lines.append(curr)
+                i += 1
+
             new_lines.append("@endif")
             continue
-
-        new_lines.extend(block)
-        continue
 
     new_lines.append(line)
     i += 1
@@ -475,8 +392,6 @@ PYEOF3
 else
   echo "⚠️ File sidebar tidak ditemukan."
 fi
-
-ensure_protect_manager_sidebar
 
 # === LANGKAH 5: Clear semua cache ===
 cd /var/www/pterodactyl
@@ -515,8 +430,10 @@ LAYOUT_FILES=(
   "/var/www/pterodactyl/resources/views/layouts/master.blade.php"
   "/var/www/pterodactyl/resources/views/layouts/auth.blade.php"
 )
+WRAPPER_LAYOUT="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
 
-BRANDING_FOUND=0
+BRANDING_TARGET_FOUND=0
+BRANDING_APPLIED_COUNT=0
 
 inject_branding() {
   local FILE="$1"
@@ -527,7 +444,7 @@ inject_branding() {
     return
   fi
 
-  BRANDING_FOUND=1
+  BRANDING_TARGET_FOUND=1
 
   if ! can_modify_file "$FILE"; then
     echo "⚠️ File $LABEL tidak writable, skip branding di file ini"
@@ -652,7 +569,13 @@ BRANDHTML
 
   inject_before_closing "$FILE" "$BRANDING_TMP" "$LABEL"
   rm -f "$BRANDING_TMP"
-  echo "✅ Branding diperbarui di $LABEL"
+
+  if grep -q "BRANDING_JHONALEY" "$FILE" 2>/dev/null; then
+    BRANDING_APPLIED_COUNT=$((BRANDING_APPLIED_COUNT + 1))
+    echo "✅ Branding diperbarui di $LABEL"
+  else
+    echo "⚠️ Branding gagal terpasang di $LABEL"
+  fi
 }
 
 for LF in "${LAYOUT_FILES[@]}"; do
@@ -661,16 +584,27 @@ for LF in "${LAYOUT_FILES[@]}"; do
   fi
 done
 
-ensure_protect_manager_sidebar
+if [ "$BRANDING_APPLIED_COUNT" -eq 0 ] && [ -f "$WRAPPER_LAYOUT" ]; then
+  echo "↪️ Branding utama belum berhasil, mencoba fallback ke wrapper.blade.php..."
+  inject_branding "$WRAPPER_LAYOUT" "$(basename "$WRAPPER_LAYOUT")"
+fi
+
+if [ "$BRANDING_TARGET_FOUND" -eq 0 ] && [ -f "$WRAPPER_LAYOUT" ]; then
+  inject_branding "$WRAPPER_LAYOUT" "$(basename "$WRAPPER_LAYOUT")"
+fi
 
 for LF in "${LAYOUT_FILES[@]}"; do
-  if [ -f "$LF" ] && [ -w "$LF" ] && grep -q "<title>" "$LF"; then
+  if [ -f "$LF" ] && grep -q "<title>" "$LF"; then
     sed -i "s|<title>.*</title>|<title>Pterodactyl - $SAFE_TITLE</title>|g" "$LF" 2>/dev/null || true
     echo "✅ Title diubah di $(basename "$LF")"
   fi
 done
 
-echo "✅ Branding selesai!"
+if [ "$BRANDING_APPLIED_COUNT" -gt 0 ]; then
+  echo "✅ Branding selesai!"
+else
+  echo "⚠️ Branding tidak terpasang di layout mana pun"
+fi
 
 # ============================================================
 # === BAGIAN 3: Welcome Banner di Client Dashboard ===
@@ -761,7 +695,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Selamat Datang di Server $BRAND_NAME_JS</h3><p>Butuh panel legal yang anti mokad? langsung aja kunjungi <a href="https://t.me/' + '$BOT_USERNAME' + '" target="_blank">$BOT_LINK_HTML</a>. Jika ada yang ingin di tanyakan langsung hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a>.</p></div>';
+    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Terimakasih telah order di $BRAND_NAME_JS. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }
