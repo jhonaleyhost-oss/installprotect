@@ -84,12 +84,14 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
             "target_file": "app/Http/Controllers/Admin/Nests/NestController.php",
             "extra_files": [
                 "app/Http/Controllers/Admin/Nests/EggController.php",
+                "resources/views/partials/admin/sidebar.blade.php",
                 "resources/views/layouts/admin.blade.php",
+                "resources/views/layouts/app.blade.php",
                 "resources/views/layouts/master.blade.php",
                 "resources/views/templates/wrapper.blade.php"
             ],
             "enabled": false
-        },
+        }
         "protect6": {
             "name": "Anti Akses Settings",
             "description": "Memblokir akses Settings panel untuk admin selain ID 1",
@@ -207,6 +209,97 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Cari file sidebar admin yang benar-benar dipakai panel
+     */
+    private function resolveAdminSidebarFile()
+    {
+        $candidates = [
+            $this->panelDir . '/resources/views/partials/admin/sidebar.blade.php',
+            $this->panelDir . '/resources/views/layouts/admin.blade.php',
+            $this->panelDir . '/resources/views/layouts/app.blade.php',
+            $this->panelDir . '/resources/views/layouts/master.blade.php',
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (!File::exists($candidate)) {
+                continue;
+            }
+
+            $content = File::get($candidate);
+            if (
+                strpos($content, 'admin.settings') !== false
+                || strpos($content, 'admin.nests') !== false
+                || strpos($content, 'sidebar-menu') !== false
+                || strpos($content, 'admin.protect-manager') !== false
+            ) {
+                return $candidate;
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            if (File::exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Re-inject sidebar Protect Manager jika hilang (misalnya setelah restore backup)
+     */
+    private function ensureProtectManagerSidebar()
+    {
+        $layoutFile = $this->resolveAdminSidebarFile();
+        if (!$layoutFile || !File::exists($layoutFile)) {
+            return;
+        }
+
+        $content = File::get($layoutFile);
+        if (strpos($content, 'PROTEKSI_JHONALEY_MASTER_SIDEBAR') !== false) {
+            return;
+        }
+
+        $sidebarSnippet = "\n" .
+            '                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}' . "\n" .
+            '                @if(Auth::user() && Auth::user()->id === 1)' . "\n" .
+            '                <li class="{{ Route::currentRouteName() === \'admin.protect-manager\' ? \'active\' : \'\' }}">' . "\n" .
+            '                    <a href="{{ route(\'admin.protect-manager\') }}">' . "\n" .
+            '                        <i class="fa fa-shield"></i> <span>Protect Manager</span>' . "\n" .
+            '                    </a>' . "\n" .
+            '                </li>' . "\n" .
+            '                @endif' . "\n" .
+            '                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}';
+
+        $anchorPos = false;
+        foreach (['admin.settings', 'Configuration', 'Settings', 'settings'] as $anchor) {
+            $candidatePos = stripos($content, $anchor);
+            if ($candidatePos !== false) {
+                $anchorPos = $candidatePos;
+                break;
+            }
+        }
+
+        if ($anchorPos !== false) {
+            $insertPos = strrpos(substr($content, 0, $anchorPos), '<li');
+            if ($insertPos !== false) {
+                $content = substr($content, 0, $insertPos) . $sidebarSnippet . "\n" . substr($content, $insertPos);
+            }
+        }
+
+        if (strpos($content, 'PROTEKSI_JHONALEY_MASTER_SIDEBAR') === false) {
+            $lastUlPos = strrpos($content, '</ul>');
+            if ($lastUlPos === false) {
+                return;
+            }
+
+            $content = substr($content, 0, $lastUlPos) . $sidebarSnippet . "\n" . substr($content, $lastUlPos);
+        }
+
+        File::put($layoutFile, $content);
+    }
+
+    /**
      * Baca konfigurasi
      */
     private function getConfig()
@@ -257,66 +350,6 @@ class ProtectManagerController extends Controller
     }
 
     /**
-     * Pastikan sidebar Protect Manager ada di layout admin.
-     * Dipanggil setelah uninstall yang me-restore layout dari backup.
-     */
-    private function ensureProtectManagerSidebar()
-    {
-        $candidates = [
-            $this->panelDir . '/resources/views/layouts/admin.blade.php',
-            $this->panelDir . '/resources/views/layouts/app.blade.php',
-            $this->panelDir . '/resources/views/layouts/master.blade.php',
-        ];
-
-        $layoutFile = null;
-        foreach ($candidates as $candidate) {
-            if (File::exists($candidate)) {
-                $layoutFile = $candidate;
-                break;
-            }
-        }
-
-        if (!$layoutFile) {
-            return;
-        }
-
-        $content = File::get($layoutFile);
-
-        // Sudah ada sidebar Protect Manager
-        if (strpos($content, 'PROTEKSI_JHONALEY_MASTER_SIDEBAR') !== false || strpos($content, 'admin.protect-manager') !== false) {
-            return;
-        }
-
-        $sidebarSnippet = "\n" .
-            "                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}\n" .
-            "                @if(Auth::user() && Auth::user()->id === 1)\n" .
-            "                <li class=\"{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}\">\n" .
-            "                    <a href=\"{{ route('admin.protect-manager') }}\">\n" .
-            "                        <i class=\"fa fa-shield\"></i> <span>Protect Manager</span>\n" .
-            "                    </a>\n" .
-            "                </li>\n" .
-            "                @endif\n" .
-            "                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}\n";
-
-        // Cari posisi: sebelum </ul> terakhir
-        $lastUlPos = strrpos($content, '</ul>');
-        if ($lastUlPos !== false) {
-            $content = substr($content, 0, $lastUlPos) . $sidebarSnippet . substr($content, $lastUlPos);
-        } else {
-            // Fallback: sebelum </body>
-            $bodyPos = strpos($content, '</body>');
-            if ($bodyPos !== false) {
-                $content = substr($content, 0, $bodyPos) . $sidebarSnippet . substr($content, $bodyPos);
-            }
-        }
-
-        File::put($layoutFile, $content);
-
-        // Clear view cache agar perubahan langsung terlihat
-        exec("cd {$this->panelDir} && php artisan view:clear 2>&1");
-    }
-
-    /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
     private function checkInstalled($protectionKey, $protection)
@@ -356,11 +389,16 @@ class ProtectManagerController extends Controller
                 ]);
 
             case 'protect5':
-                return $containsAny('app/Http/Controllers/Admin/Nests/NestController.php', ['PROTEKSI_JHONALEY'])
+                $hasNestProtection = $containsAny('app/Http/Controllers/Admin/Nests/NestController.php', ['PROTEKSI_JHONALEY'])
                     || $containsAny('app/Http/Controllers/Admin/Nests/EggController.php', ['PROTEKSI_JHONALEY'])
-                    || $containsAny('resources/views/layouts/admin.blade.php', ['PROTEKSI_NESTS_SIDEBAR', 'BRANDING_JHONALEY'])
-                    || $containsAny('resources/views/layouts/master.blade.php', ['BRANDING_JHONALEY', 'WELCOME_JHONALEY'])
+                    || $containsAny('resources/views/partials/admin/sidebar.blade.php', ['PROTEKSI_NESTS_SIDEBAR'])
+                    || $containsAny('resources/views/layouts/admin.blade.php', ['PROTEKSI_NESTS_SIDEBAR'])
+                    || $containsAny('resources/views/layouts/app.blade.php', ['PROTEKSI_NESTS_SIDEBAR']);
+                $hasAdminBranding = $containsAny('resources/views/layouts/admin.blade.php', ['BRANDING_JHONALEY']);
+                $hasWelcomeBanner = $containsAny('resources/views/layouts/master.blade.php', ['WELCOME_JHONALEY'])
                     || $containsAny('resources/views/templates/wrapper.blade.php', ['WELCOME_JHONALEY']);
+
+                return $hasAdminBranding && ($hasNestProtection || $hasWelcomeBanner);
 
             case 'protect6':
                 return $containsAny('app/Http/Controllers/Admin/Settings/IndexController.php', [
@@ -490,6 +528,9 @@ class ProtectManagerController extends Controller
         $config['protections'][$key]['enabled'] = ($returnVar === 0);
         $this->saveConfig($config);
 
+        // Re-inject sidebar Protect Manager jika hilang setelah install script
+        $this->ensureProtectManagerSidebar();
+
         $outputText = implode("\n", $output);
 
         if ($returnVar === 0) {
@@ -551,11 +592,11 @@ class ProtectManagerController extends Controller
         $config['protections'][$key]['enabled'] = false;
         $this->saveConfig($config);
 
-        // Clear cache
-        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
-
         // Re-inject sidebar Protect Manager jika hilang setelah restore
         $this->ensureProtectManagerSidebar();
+
+        // Clear cache
+        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
 
         return redirect()->route('admin.protect-manager')->with('success', "✅ {$prot['name']} berhasil di-uninstall! ({$restoredCount} file di-restore)");
     }
@@ -639,6 +680,7 @@ class ProtectManagerController extends Controller
 
         if ($reapplied > 0) {
             $this->saveConfig($config);
+            $this->ensureProtectManagerSidebar();
             $messages[] = "🔄 {$reapplied} proteksi otomatis diterapkan ulang dengan brand baru.";
         }
 
@@ -729,6 +771,7 @@ class ProtectManagerController extends Controller
         }
 
         $this->saveConfig($config);
+        $this->ensureProtectManagerSidebar();
 
         return redirect()->route('admin.protect-manager')
             ->with('success', implode("\n", $results))
@@ -1282,73 +1325,10 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "📌 BAGIAN 5: Tambah Sidebar Menu"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-ensure_protect_manager_sidebar() {
-    local target_file="$1"
-
-    if [ -z "$target_file" ] || [ ! -f "$target_file" ]; then
-        echo "⚠️ Layout sidebar tidak ditemukan, skip pemulihan sidebar"
-        return 0
-    fi
-
-    if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR\|admin.protect-manager" "$target_file" 2>/dev/null; then
-        echo "ℹ️ Sidebar Protect Manager sudah ada di $target_file"
-        return 0
-    fi
-
-    cp "$target_file" "${target_file}.bak_pm_${TIMESTAMP}" 2>/dev/null || true
-
-    local settings_line=""
-    settings_line=$(grep -n "Settings\|settings\|Configuration" "$target_file" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
-    if [ -z "$settings_line" ]; then
-        settings_line=$(grep -n "</ul>" "$target_file" | tail -1 | cut -d: -f1)
-    fi
-
-    if [ -z "$settings_line" ]; then
-        echo "⚠️ Tidak bisa menemukan posisi sidebar yang tepat"
-        echo "📝 Tambahkan manual di layout file:"
-        echo '   @if(Auth::user() && Auth::user()->id === 1)'
-        echo '   <li><a href="{{ route('\''admin.protect-manager'\'') }}"><i class="fa fa-shield"></i> <span>Protect Manager</span></a></li>'
-        echo '   @endif'
-        return 0
-    fi
-
-    local total_lines
-    local insert_line
-    local temp_file
-
-    total_lines=$(wc -l < "$target_file")
-    insert_line=$settings_line
-    for i in $(seq "$settings_line" $((settings_line + 15))); do
-        if [ "$i" -gt "$total_lines" ]; then break; fi
-        if sed -n "${i}p" "$target_file" | grep -q "</li>"; then
-            insert_line=$i
-            break
-        fi
-    done
-
-    temp_file=$(mktemp)
-    head -n "$insert_line" "$target_file" > "$temp_file"
-    cat >> "$temp_file" << 'SIDEBAREOF'
-                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
-                @if(Auth::user() && Auth::user()->id === 1)
-                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
-                    <a href="{{ route('admin.protect-manager') }}">
-                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
-                    </a>
-                </li>
-                @endif
-                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
-SIDEBAREOF
-    tail -n +"$((insert_line + 1))" "$target_file" >> "$temp_file"
-    mv "$temp_file" "$target_file"
-    chmod 644 "$target_file"
-
-    echo "✅ Sidebar menu ditambahkan di baris $insert_line"
-}
-
-# Cari file layout admin
+# Cari file sidebar/layout admin
 LAYOUT_FILE=""
 LAYOUT_CANDIDATES=(
+    "$PANEL_DIR/resources/views/partials/admin/sidebar.blade.php"
     "$PANEL_DIR/resources/views/layouts/admin.blade.php"
     "$PANEL_DIR/resources/views/layouts/app.blade.php"
     "$PANEL_DIR/resources/views/layouts/master.blade.php"
@@ -1366,7 +1346,63 @@ if [ -z "$LAYOUT_FILE" ]; then
     echo "⏭️ Skip penambahan sidebar. Tambahkan manual."
 else
     echo "📂 Layout ditemukan: $LAYOUT_FILE"
-    ensure_protect_manager_sidebar "$LAYOUT_FILE"
+    cp "$LAYOUT_FILE" "${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
+    echo "💾 Backup: ${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
+
+    if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$LAYOUT_FILE"; then
+        echo "⚠️ Sidebar Protect Manager sudah ada, skip..."
+    else
+        # Cari posisi sidebar - biasanya sebelum </ul> terakhir atau sebelum tag tertentu
+        # Strategi: cari baris terakhir yang mengandung "</li>" di dalam sidebar
+        # dan inject setelahnya
+
+        # Metode 1: Cari "Settings" menu item sebagai anchor point (biasanya terakhir)
+        SETTINGS_LINE=$(grep -n "Settings\|settings\|Configuration" "$LAYOUT_FILE" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
+        
+        if [ -z "$SETTINGS_LINE" ]; then
+            # Metode 2: Cari </ul> terakhir di sidebar
+            SETTINGS_LINE=$(grep -n "</ul>" "$LAYOUT_FILE" | tail -1 | cut -d: -f1)
+        fi
+
+        if [ -n "$SETTINGS_LINE" ]; then
+            # Cari </li> terdekat setelah SETTINGS_LINE
+            TOTAL_LINES=$(wc -l < "$LAYOUT_FILE")
+            INSERT_LINE=$SETTINGS_LINE
+            for i in $(seq "$SETTINGS_LINE" $((SETTINGS_LINE + 15))); do
+                if [ "$i" -gt "$TOTAL_LINES" ]; then break; fi
+                if sed -n "${i}p" "$LAYOUT_FILE" | grep -q "</li>"; then
+                    INSERT_LINE=$i
+                    break
+                fi
+            done
+
+            # Inject sidebar menu setelah INSERT_LINE menggunakan temp file
+            TEMP_FILE=$(mktemp)
+            head -n "$INSERT_LINE" "$LAYOUT_FILE" > "$TEMP_FILE"
+            cat >> "$TEMP_FILE" << 'SIDEBAREOF'
+                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
+                @if(Auth::user() && Auth::user()->id === 1)
+                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
+                    <a href="{{ route('admin.protect-manager') }}">
+                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
+                    </a>
+                </li>
+                @endif
+                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
+SIDEBAREOF
+            tail -n +"$((INSERT_LINE + 1))" "$LAYOUT_FILE" >> "$TEMP_FILE"
+            mv "$TEMP_FILE" "$LAYOUT_FILE"
+            chmod 644 "$LAYOUT_FILE"
+            
+            echo "✅ Sidebar menu ditambahkan di baris $INSERT_LINE"
+        else
+            echo "⚠️ Tidak bisa menemukan posisi sidebar yang tepat"
+            echo "📝 Tambahkan manual di layout file:"
+            echo '   @if(Auth::user() && Auth::user()->id === 1)'
+            echo '   <li><a href="{{ route('\''admin.protect-manager'\'') }}"><i class="fa fa-shield"></i> <span>Protect Manager</span></a></li>'
+            echo '   @endif'
+        fi
+    fi
 fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

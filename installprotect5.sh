@@ -299,6 +299,7 @@ echo "🔧 Menyembunyikan menu Nests dari sidebar..."
 SIDEBAR_FILES=(
   "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
   "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
+  "/var/www/pterodactyl/resources/views/layouts/app.blade.php"
 )
 
 SIDEBAR_FOUND=""
@@ -427,6 +428,7 @@ echo "🎨 Memasang branding $BRAND_NAME..."
 
 LAYOUT_FILES=(
   "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
+  "/var/www/pterodactyl/resources/views/layouts/app.blade.php"
 )
 
 # Cleanup branding lama dari master.blade.php dan auth.blade.php jika ada
@@ -576,11 +578,20 @@ BRANDHTML
   echo "✅ Branding diperbarui di $LABEL"
 }
 
+BRANDING_APPLIED=0
 for LF in "${LAYOUT_FILES[@]}"; do
   if [ -f "$LF" ]; then
     inject_branding "$LF" "$(basename "$LF")"
+    if grep -q "BRANDING_JHONALEY" "$LF" 2>/dev/null; then
+      BRANDING_APPLIED=1
+    fi
   fi
 done
+
+if [ "$BRANDING_APPLIED" -eq 0 ]; then
+  echo "❌ Branding admin gagal dipasang: layout admin tidak ditemukan atau tidak termodifikasi"
+  exit 1
+fi
 
 for LF in "${LAYOUT_FILES[@]}"; do
   if [ -f "$LF" ] && grep -q "<title>" "$LF"; then
@@ -703,7 +714,17 @@ fi
 # ===================================================================
 # RE-INJECT SIDEBAR PROTECT MANAGER (jika hilang setelah modifikasi admin.blade.php)
 # ===================================================================
-ADMIN_LAYOUT="/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
+ADMIN_LAYOUT=""
+for CANDIDATE in \
+  "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php" \
+  "/var/www/pterodactyl/resources/views/layouts/admin.blade.php" \
+  "/var/www/pterodactyl/resources/views/layouts/app.blade.php"; do
+  if [ -f "$CANDIDATE" ]; then
+    ADMIN_LAYOUT="$CANDIDATE"
+    break
+  fi
+done
+
 if [ -f "$ADMIN_LAYOUT" ] && ! grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$ADMIN_LAYOUT" 2>/dev/null; then
   echo "🔧 Re-inject sidebar Protect Manager..."
 
@@ -720,15 +741,12 @@ if [ -f "$ADMIN_LAYOUT" ] && ! grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$ADMI
                 {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
 SIDEBAR_PM_EOF
 
-  # Cari posisi: sebelum Settings atau sebelum </ul> terakhir
   INSERT_LINE=""
-  SETTINGS_LINE=$(grep -n "admin.settings" "$ADMIN_LAYOUT" 2>/dev/null | head -1 | cut -d: -f1)
+  SETTINGS_LINE=$(grep -n "admin.settings\|Configuration\|Settings\|settings" "$ADMIN_LAYOUT" 2>/dev/null | head -1 | cut -d: -f1)
   if [ -n "$SETTINGS_LINE" ]; then
-    # Cari <li sebelum baris Settings
     INSERT_LINE=$((SETTINGS_LINE - 1))
     while [ "$INSERT_LINE" -gt 0 ]; do
       if sed -n "${INSERT_LINE}p" "$ADMIN_LAYOUT" | grep -q "<li"; then
-        INSERT_LINE=$((INSERT_LINE - 1))
         break
       fi
       INSERT_LINE=$((INSERT_LINE - 1))
@@ -736,7 +754,6 @@ SIDEBAR_PM_EOF
   fi
 
   if [ -z "$INSERT_LINE" ] || [ "$INSERT_LINE" -le 0 ]; then
-    # Fallback: sebelum </ul> terakhir
     INSERT_LINE=$(grep -n "</ul>" "$ADMIN_LAYOUT" | tail -1 | cut -d: -f1)
     if [ -n "$INSERT_LINE" ]; then
       INSERT_LINE=$((INSERT_LINE - 1))
