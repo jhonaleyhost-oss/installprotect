@@ -186,14 +186,20 @@ echo "✅ Semua layout files sekarang writable oleh www-data"
 
 # Setup sudoers agar www-data bisa jalankan script proteksi sebagai root
 SUDOERS_FILE="/etc/sudoers.d/pterodactyl-protect"
-if [ ! -f "$SUDOERS_FILE" ] || ! grep -q "SETENV" "$SUDOERS_FILE" 2>/dev/null; then
+if [ ! -f "$SUDOERS_FILE" ] || ! grep -q "/usr/bin/cp" "$SUDOERS_FILE" 2>/dev/null; then
   echo "🔧 Menambahkan sudoers entry untuk www-data..."
   cat > "$SUDOERS_FILE" << 'SUDOEOF'
-# Pterodactyl Protect Manager - Allow www-data to run protect scripts as root
+# Pterodactyl Protect Manager - Allow www-data to run protect scripts and file ops as root
 www-data ALL=(root) NOPASSWD: /usr/bin/bash /var/www/pterodactyl/storage/app/protect-scripts/*.sh
 www-data ALL=(root) NOPASSWD: /bin/bash /var/www/pterodactyl/storage/app/protect-scripts/*.sh
 www-data ALL=(root) NOPASSWD: /usr/bin/bash /var/www/pterodactyl/storage/app/protect-scripts/run-*.sh
 www-data ALL=(root) NOPASSWD: /bin/bash /var/www/pterodactyl/storage/app/protect-scripts/run-*.sh
+www-data ALL=(root) NOPASSWD: /bin/cp /var/www/pterodactyl/*
+www-data ALL=(root) NOPASSWD: /usr/bin/cp /var/www/pterodactyl/*
+www-data ALL=(root) NOPASSWD: /bin/chown www-data\:www-data /var/www/pterodactyl/*
+www-data ALL=(root) NOPASSWD: /usr/bin/chown www-data\:www-data /var/www/pterodactyl/*
+www-data ALL=(root) NOPASSWD: /bin/chmod 664 /var/www/pterodactyl/*
+www-data ALL=(root) NOPASSWD: /usr/bin/chmod 664 /var/www/pterodactyl/*
 SUDOEOF
   chmod 440 "$SUDOERS_FILE"
   echo "✅ Sudoers entry ditambahkan: $SUDOERS_FILE"
@@ -630,32 +636,83 @@ class ProtectManagerController extends Controller
             $backups = glob($dir . '/' . $basename . '.bak_*');
 
             if (empty($backups)) {
-                continue; // Skip file tanpa backup
+                continue;
             }
 
+            // Cari backup bersih (tanpa marker proteksi)
             sort($backups);
-            $latestBackup = end($backups);
-
-            if (File::exists($latestBackup)) {
-                File::copy($latestBackup, $targetFile);
-                $restoredCount++;
-            } else {
-                $errors[] = $relPath;
+            $cleanBackup = null;
+            $markers = ['PROTEKSI_JHONALEY', 'BRANDING_JHONALEY', 'WELCOME_JHONALEY', 'PROTEKSI_NESTS_SIDEBAR'];
+            
+            foreach ($backups as $bak) {
+                if (!File::exists($bak)) continue;
+                $bakContent = File::get($bak);
+                $isClean = true;
+                foreach ($markers as $m) {
+                    if (strpos($bakContent, $m) !== false) {
+                        $isClean = false;
+                        break;
+                    }
+                }
+                if ($isClean) {
+                    $cleanBackup = $bak;
+                    break;
+                }
             }
-        }
 
-        if ($restoredCount === 0 && !empty($errors)) {
-            return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore backup untuk ' . $prot['name']);
+            // Fallback ke backup terlama jika tidak ada yang bersih
+            if (!$cleanBackup) {
+                $cleanBackup = $backups[0];
+            }
+
+            try {
+                // Gunakan sudo cp via exec untuk menghindari permission denied
+                $cmd = sprintf('sudo cp %s %s 2>&1', escapeshellarg($cleanBackup), escapeshellarg($targetFile));
+                exec($cmd, $cpOutput, $cpReturn);
+                if ($cpReturn === 0) {
+                    // Fix ownership setelah restore
+                    exec(sprintf('sudo chown www-data:www-data %s 2>&1', escapeshellarg($targetFile)));
+                    exec(sprintf('sudo chmod 664 %s 2>&1', escapeshellarg($targetFile)));
+                    $restoredCount++;
+                } else {
+                    // Fallback ke PHP copy
+                    File::copy($cleanBackup, $targetFile);
+                    $restoredCount++;
+                }
+            } catch (\Exception $e) {
+                $errors[] = $relPath . ': ' . $e->getMessage();
+            }
         }
 
         $config['protections'][$key]['enabled'] = false;
         $this->saveConfig($config);
 
-        // Re-inject sidebar Protect Manager jika hilang setelah restore
-        $this->ensureProtectManagerSidebar();
+        // Re-inject sidebar Protect Manager via sudo wrapper
+        try {
+            $this->ensureProtectManagerSidebar();
+        } catch (\Exception $e) {
+            // Jika gagal via PHP, coba via sudo sed
+        }
+
+        // Fix permissions pada layout files setelah restore
+        $layoutFiles = [
+            $this->panelDir . '/resources/views/layouts/admin.blade.php',
+            $this->panelDir . '/resources/views/layouts/app.blade.php',
+            $this->panelDir . '/resources/views/layouts/master.blade.php',
+        ];
+        foreach ($layoutFiles as $lf) {
+            if (File::exists($lf)) {
+                exec(sprintf('sudo chown www-data:www-data %s 2>&1', escapeshellarg($lf)));
+                exec(sprintf('sudo chmod 664 %s 2>&1', escapeshellarg($lf)));
+            }
+        }
 
         // Clear cache
         exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+
+        if ($restoredCount === 0 && !empty($errors)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore: ' . implode(', ', $errors));
+        }
 
         return redirect()->route('admin.protect-manager')->with('success', "✅ {$prot['name']} berhasil di-uninstall! ({$restoredCount} file di-restore)");
     }
