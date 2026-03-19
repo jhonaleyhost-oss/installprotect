@@ -58,6 +58,13 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
     "welcome_title": "Welcome To Server Jhonaley Store",
     "welcome_message": "Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.",
     "protections": {
+        "protect1": {
+            "name": "Anti Delete Server",
+            "description": "Mencegah penghapusan server oleh admin selain ID 1",
+            "marker": "PROTEKSI_JHONALEY",
+            "target_file": "app/Services/Servers/ServerDeletionService.php",
+            "enabled": false
+        },
         "protect2": {
             "name": "Anti Hapus/Ubah User",
             "description": "Melindungi data user dari penghapusan dan modifikasi oleh admin lain",
@@ -453,6 +460,13 @@ class ProtectManagerController extends Controller
         };
 
         switch ($protectionKey) {
+            case 'protect1':
+                return $containsAny('app/Services/Servers/ServerDeletionService.php', [
+                    'Akses ditolak: Anda hanya dapat menghapus server milik Anda sendiri',
+                    '$user->id !== 1',
+                    'PROTEKSI_JHONALEY',
+                ]);
+
             case 'protect2':
                 return $containsAny('app/Http/Controllers/Admin/UserController.php', [
                     '✖️ Akses ditolak - protect by',

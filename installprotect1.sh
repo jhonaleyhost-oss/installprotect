@@ -1,5 +1,8 @@
 #!/bin/bash
 
+BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+
 REMOTE_PATH="/var/www/pterodactyl/app/Services/Servers/ServerDeletionService.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 BACKUP_PATH="${REMOTE_PATH}.bak_${TIMESTAMP}"
@@ -119,6 +122,11 @@ class ServerDeletionService
 EOF
 
 chmod 644 "$REMOTE_PATH"
+
+# Apply brand customization
+sed -i "s|Protect By Jhonaley|${BRAND_TEXT}|g" "$REMOTE_PATH" 2>/dev/null || true
+sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$REMOTE_PATH" 2>/dev/null || true
+sed -i "s|𝐏𝐑𝐎𝐓𝐄𝐂𝐓 𝐁𝐘 𝐉𝐇𝐎𝐍𝐀𝐋𝐄𝐘 𝐓𝐄𝐂𝐇|${BRAND_TEXT}|g" "$REMOTE_PATH" 2>/dev/null || true
 
 echo "✅ Proteksi Anti Delete Server berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"
