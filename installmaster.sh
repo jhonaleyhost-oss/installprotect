@@ -255,17 +255,99 @@ class ProtectManagerController extends Controller
      */
     private function checkInstalled($protectionKey, $protection)
     {
-        if ($protectionKey === 'protect5') {
-            $adminLayout = $this->panelDir . '/resources/views/layouts/admin.blade.php';
-            $clientHome = $this->panelDir . '/resources/scripts/components/dashboard/DashboardContainer.tsx';
+        $containsAny = function (string $relativePath, array $needles): bool {
+            $fullPath = $this->panelDir . '/' . ltrim($relativePath, '/');
+            if (!File::exists($fullPath)) {
+                return false;
+            }
 
-            $hasBranding = File::exists($adminLayout)
-                && strpos(File::get($adminLayout), 'BRANDING_JHONALEY') !== false;
+            $content = File::get($fullPath);
+            foreach ($needles as $needle) {
+                if ($needle !== '' && strpos($content, $needle) !== false) {
+                    return true;
+                }
+            }
 
-            $hasWelcomeBanner = File::exists($clientHome)
-                && strpos(File::get($clientHome), 'WELCOME_JHONALEY') !== false;
+            return false;
+        };
 
-            return $hasBranding || $hasWelcomeBanner;
+        switch ($protectionKey) {
+            case 'protect2':
+                return $containsAny('app/Http/Controllers/Admin/UserController.php', [
+                    '✖️ Akses ditolak - protect by',
+                    'Hanya admin ID 1 yang bisa akses halaman view user',
+                ]);
+
+            case 'protect3':
+                return $containsAny('app/Http/Controllers/Admin/LocationController.php', [
+                    'Jhonaley Protect - Akses ditolak',
+                ]);
+
+            case 'protect4':
+                return $containsAny('app/Http/Controllers/Admin/Nodes/NodeController.php', [
+                    'membuka menu Nodes',
+                    '©Protect By Jhonaley V2.3',
+                ]);
+
+            case 'protect5':
+                return $containsAny('app/Http/Controllers/Admin/Nests/NestController.php', ['PROTEKSI_JHONALEY'])
+                    || $containsAny('app/Http/Controllers/Admin/Nests/EggController.php', ['PROTEKSI_JHONALEY'])
+                    || $containsAny('resources/views/layouts/admin.blade.php', ['PROTEKSI_NESTS_SIDEBAR', 'BRANDING_JHONALEY'])
+                    || $containsAny('resources/views/layouts/master.blade.php', ['BRANDING_JHONALEY', 'WELCOME_JHONALEY'])
+                    || $containsAny('resources/views/templates/wrapper.blade.php', ['WELCOME_JHONALEY']);
+
+            case 'protect6':
+                return $containsAny('app/Http/Controllers/Admin/Settings/IndexController.php', [
+                    'Jhonaley Protect - Akses ditolak❌',
+                    'Jhonaley Protect t.me/Jhonaley - Akses ditolak',
+                ]);
+
+            case 'protect7':
+                return $containsAny('app/Http/Controllers/Api/Client/Servers/FileController.php', [
+                    'private function checkServerAccess',
+                    'Anda tidak memiliki akses ke server ini.',
+                ]);
+
+            case 'protect8':
+                return $containsAny('app/Http/Controllers/Api/Client/Servers/ServerController.php', [
+                    'Hanya Bisa Melihat Server Milik Sendiri.',
+                    '𝗛𝗮𝗻𝘆𝗮 𝗕𝗶𝘀𝗮 𝗠𝗲𝗹𝗶𝗵𝗮𝘁 𝗦𝗲𝗿𝘃𝗲𝗿 𝗠𝗶𝗹𝗶𝗸 𝗦𝗲𝗻𝗱𝗶𝗿𝗶.',
+                ]);
+
+            case 'protect9':
+                return $containsAny('app/Services/Servers/DetailsModificationService.php', [
+                    'hanya admin utama yang bisa mengubah detail server',
+                    'Akses ditolak: hanya admin utama yang bisa mengubah detail server.',
+                ]);
+
+            case 'protect10':
+                return $containsAny('resources/views/admin/servers/index.blade.php', [
+                    'Security Protection Active',
+                    'Protected by:',
+                ]) || $containsAny('resources/views/admin/servers/view/index.blade.php', [
+                    'SERVER MANAGEMENT RESTRICTED',
+                    'Root Administrator Access Required',
+                ]);
+
+            case 'protect11':
+                return $containsAny('resources/views/admin/servers/index.blade.php', [
+                    'Protected by: ',
+                    '@danangvalentpl',
+                ]) || $containsAny('resources/views/admin/servers/view/index.blade.php', [
+                    'BLUR PROTECTION FOR NON-ROOT ADMINS',
+                    'backdrop-filter: blur(20px);',
+                ]);
+
+            case 'protect12':
+                return $containsAny('resources/views/layouts/admin.blade.php', ['PROTEKSI_NODES_SIDEBAR'])
+                    || $containsAny('app/Http/Controllers/Admin/Nodes/NodeController.php', ['PROTEKSI_JHONALEY'])
+                    || $containsAny('app/Http/Controllers/Api/Client/AccountController.php', ['PROTEKSI_JHONALEY_ACCOUNT'])
+                    || $containsAny('app/Http/Middleware/ProtectAdminOneApi.php', ['PROTEKSI_JHONALEY_MIDDLEWARE'])
+                    || $containsAny('app/Http/Controllers/Api/Application/Users/UserController.php', ['PROTEKSI_JHONALEY_APPUSER']);
+
+            case 'protect13':
+                return $containsAny('resources/views/layouts/admin.blade.php', ['PROTEKSI_JHONALEY_APPAPI_MENU'])
+                    || $containsAny('app/Http/Controllers/Admin/ApiController.php', ['PROTEKSI_JHONALEY_APPAPI_BLOCK']);
         }
 
         $targetFile = $this->panelDir . '/' . $protection['target_file'];
@@ -273,25 +355,7 @@ class ProtectManagerController extends Controller
             return false;
         }
 
-        $content = File::get($targetFile);
-
-        // Cek marker spesifik dulu, lalu fallback ke pola proteksi umum
-        if (strpos($content, $protection['marker']) !== false) {
-            return true;
-        }
-
-        // Semua script proteksi menulis cek "$user->id !== 1" atau "$authUser->id !== 1"
-        // yang TIDAK ada di file Pterodactyl asli
-        if (strpos($content, '->id !== 1') !== false) {
-            return true;
-        }
-
-        // Fallback: cek kata kunci branding yang umum ditulis script
-        if (stripos($content, 'jhonaley') !== false || stripos($content, 'akses ditolak') !== false) {
-            return true;
-        }
-
-        return false;
+        return strpos(File::get($targetFile), $protection['marker']) !== false;
     }
 
     /**

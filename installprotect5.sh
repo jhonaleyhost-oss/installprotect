@@ -5,7 +5,7 @@ set -e
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
 
 BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
-BRAND_TEXT="${BRAND_TEXT:-Protected}"
+BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
 CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
 BOT_LINK="${BOT_LINK:-@upgradeuser_bot}"
 
@@ -39,24 +39,63 @@ BRAND_NAME_JS=$(js_escape "$BRAND_NAME")
 CONTACT_TELEGRAM_JS=$(js_escape "$CONTACT_TELEGRAM")
 SAFE_TITLE=$(sed_escape "$BRAND_NAME")
 
+can_modify_file() {
+  local file="$1"
+  [ -f "$file" ] && { [ -w "$file" ] || [ -w "$(dirname "$file")" ]; }
+}
+
+write_temp_to_target() {
+  local temp_file="$1"
+  local target_file="$2"
+  local label="$3"
+
+  if cp "$temp_file" "$target_file" 2>/dev/null; then
+    return 0
+  fi
+
+  if cat "$temp_file" > "$target_file" 2>/dev/null; then
+    return 0
+  fi
+
+  echo "⚠️ Tidak bisa menulis ke $label, skip. Cek permission file/folder target."
+  return 1
+}
+
 remove_block_by_markers() {
   local file="$1"
   local start_marker="$2"
   local end_marker="$3"
+  local tmp_file
 
+  if ! can_modify_file "$file"; then
+    echo "⚠️ Skip cleanup branding di $file karena tidak writable"
+    return 0
+  fi
+
+  tmp_file=$(mktemp)
   awk -v start="$start_marker" -v end="$end_marker" '
     index($0, start) { skip=1; next }
     skip && index($0, end) { skip=0; next }
     !skip { print }
-  ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+  ' "$file" > "$tmp_file"
+
+  write_temp_to_target "$tmp_file" "$file" "$file" || true
+  rm -f "$tmp_file"
 }
 
 cleanup_old_branding() {
   local file="$1"
+  local tmp_file
+
+  if ! can_modify_file "$file"; then
+    echo "⚠️ Skip branding cleanup di $file karena tidak writable"
+    return 0
+  fi
 
   remove_block_by_markers "$file" "<!-- BRANDING_JHONALEY_START -->" "<!-- BRANDING_JHONALEY_END -->"
   remove_block_by_markers "$file" "<!-- BRANDING_JHONALEY: Custom Branding -->" "</style>"
 
+  tmp_file=$(mktemp)
   awk '
     BEGIN { skip=0; depth=0; seen_div=0 }
     /<!-- BRANDING_JHONALEY: Footer -->/ { skip=1; depth=0; seen_div=0; next }
@@ -77,30 +116,47 @@ cleanup_old_branding() {
       next
     }
     { print }
-  ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+  ' "$file" > "$tmp_file"
+
+  write_temp_to_target "$tmp_file" "$file" "$file" || true
+  rm -f "$tmp_file"
 }
 
 inject_before_closing() {
   local file="$1"
   local snippet_file="$2"
   local label="$3"
+  local tmp_file
+
+  if ! can_modify_file "$file"; then
+    echo "⚠️ Skip inject ke $label karena file tidak writable"
+    return 0
+  fi
+
+  tmp_file=$(mktemp)
 
   if grep -q "</body>" "$file"; then
     awk -v snippet="$snippet_file" '
       /<\/body>/ { while ((getline line < snippet) > 0) print line; close(snippet) }
       { print }
-    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    ' "$file" > "$tmp_file"
+    write_temp_to_target "$tmp_file" "$file" "$label" || true
     echo "✅ Konten diinjeksi sebelum </body> di $label"
   elif grep -q "</html>" "$file"; then
     awk -v snippet="$snippet_file" '
       /<\/html>/ { while ((getline line < snippet) > 0) print line; close(snippet) }
       { print }
-    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    ' "$file" > "$tmp_file"
+    write_temp_to_target "$tmp_file" "$file" "$label" || true
     echo "✅ Konten diinjeksi sebelum </html> di $label"
   else
-    cat "$snippet_file" >> "$file"
+    cat "$snippet_file" > "$tmp_file"
+    cat "$file" >> "$tmp_file"
+    write_temp_to_target "$tmp_file" "$file" "$label" || true
     echo "✅ Konten ditambahkan di akhir $label"
   fi
+
+  rm -f "$tmp_file"
 }
 
 echo "==========================================="
@@ -241,38 +297,40 @@ fi
 echo "🔧 Menyembunyikan menu Nests dari sidebar..."
 
 SIDEBAR_FILES=(
-  "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
   "/var/www/pterodactyl/resources/views/partials/admin/sidebar.blade.php"
+  "/var/www/pterodactyl/resources/views/layouts/admin.blade.php"
 )
 
 SIDEBAR_FOUND=""
 for SF in "${SIDEBAR_FILES[@]}"; do
-  if [ -f "$SF" ]; then
+  if [ -f "$SF" ] && grep -q "admin.nests" "$SF" 2>/dev/null; then
     SIDEBAR_FOUND="$SF"
     break
   fi
 done
 
 if [ -z "$SIDEBAR_FOUND" ]; then
-  SIDEBAR_FOUND=$(grep -rl "admin.nests" /var/www/pterodactyl/resources/views/layouts/ 2>/dev/null | head -1)
+  SIDEBAR_FOUND=$(grep -rl "admin.nests" /var/www/pterodactyl/resources/views/partials/ 2>/dev/null | head -1)
   if [ -z "$SIDEBAR_FOUND" ]; then
-    SIDEBAR_FOUND=$(grep -rl "admin.nests" /var/www/pterodactyl/resources/views/partials/ 2>/dev/null | head -1)
+    SIDEBAR_FOUND=$(grep -rl "admin.nests" /var/www/pterodactyl/resources/views/layouts/ 2>/dev/null | head -1)
   fi
 fi
 
 if [ -n "$SIDEBAR_FOUND" ]; then
-  if [ ! -f "${SIDEBAR_FOUND}.bak_${TIMESTAMP}" ]; then
-    cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}"
-  fi
   echo "📂 Sidebar ditemukan: $SIDEBAR_FOUND"
 
   echo "📋 Baris terkait Nests di sidebar:"
   grep -n -i "nest" "$SIDEBAR_FOUND" | head -10
   echo ""
 
-  SIDEBAR_TEMP=$(mktemp)
-  export SIDEBAR_FOUND SIDEBAR_TEMP
-  python3 << 'PYEOF3'
+  if ! can_modify_file "$SIDEBAR_FOUND"; then
+    echo "⚠️ Sidebar tidak writable, skip sembunyikan menu Nests."
+  else
+    cp "$SIDEBAR_FOUND" "${SIDEBAR_FOUND}.bak_${TIMESTAMP}" 2>/dev/null || true
+
+    SIDEBAR_TEMP=$(mktemp)
+    export SIDEBAR_FOUND SIDEBAR_TEMP
+    python3 << 'PYEOF3'
 import os
 
 sidebar = os.environ["SIDEBAR_FOUND"]
@@ -283,7 +341,7 @@ with open(sidebar, "r") as f:
 
 if "PROTEKSI_NESTS_SIDEBAR" in content:
     print("⚠️ Sidebar Nests sudah diproteksi")
-    exit(0)
+    raise SystemExit(0)
 
 lines = content.split("\n")
 new_lines = []
@@ -322,9 +380,15 @@ with open(sidebar_temp, "w") as f:
 
 print("✅ Temp sidebar berhasil dibuat")
 PYEOF3
-  cat "$SIDEBAR_TEMP" > "$SIDEBAR_FOUND"
-  rm -f "$SIDEBAR_TEMP"
-  echo "✅ Menu Nests disembunyikan dari sidebar"
+
+    if write_temp_to_target "$SIDEBAR_TEMP" "$SIDEBAR_FOUND" "$SIDEBAR_FOUND"; then
+      echo "✅ Menu Nests disembunyikan dari sidebar"
+    else
+      echo "⚠️ Gagal menulis perubahan sidebar, skip langkah sembunyikan menu."
+    fi
+
+    rm -f "$SIDEBAR_TEMP"
+  fi
 else
   echo "⚠️ File sidebar tidak ditemukan."
 fi
@@ -380,8 +444,13 @@ inject_branding() {
 
   BRANDING_FOUND=1
 
+  if ! can_modify_file "$FILE"; then
+    echo "⚠️ File $LABEL tidak writable, skip branding di file ini"
+    return
+  fi
+
   if [ ! -f "${FILE}.bak_${TIMESTAMP}" ]; then
-    cp "$FILE" "${FILE}.bak_${TIMESTAMP}"
+    cp "$FILE" "${FILE}.bak_${TIMESTAMP}" 2>/dev/null || true
   fi
 
   cleanup_old_branding "$FILE"
@@ -605,7 +674,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Butuh Panel Legal yang anti mokad? Langsung Aja ke <a href="https://t.me/$BOT_USERNAME"target="_blank">$BOT_LINK_HTML</a>. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
+    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Terimakasih telah order di $BRAND_NAME_JS. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }
