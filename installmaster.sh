@@ -257,6 +257,66 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Pastikan sidebar Protect Manager ada di layout admin.
+     * Dipanggil setelah uninstall yang me-restore layout dari backup.
+     */
+    private function ensureProtectManagerSidebar()
+    {
+        $candidates = [
+            $this->panelDir . '/resources/views/layouts/admin.blade.php',
+            $this->panelDir . '/resources/views/layouts/app.blade.php',
+            $this->panelDir . '/resources/views/layouts/master.blade.php',
+        ];
+
+        $layoutFile = null;
+        foreach ($candidates as $candidate) {
+            if (File::exists($candidate)) {
+                $layoutFile = $candidate;
+                break;
+            }
+        }
+
+        if (!$layoutFile) {
+            return;
+        }
+
+        $content = File::get($layoutFile);
+
+        // Sudah ada sidebar Protect Manager
+        if (strpos($content, 'PROTEKSI_JHONALEY_MASTER_SIDEBAR') !== false || strpos($content, 'admin.protect-manager') !== false) {
+            return;
+        }
+
+        $sidebarSnippet = "\n" .
+            "                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}\n" .
+            "                @if(Auth::user() && Auth::user()->id === 1)\n" .
+            "                <li class=\"{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}\">\n" .
+            "                    <a href=\"{{ route('admin.protect-manager') }}\">\n" .
+            "                        <i class=\"fa fa-shield\"></i> <span>Protect Manager</span>\n" .
+            "                    </a>\n" .
+            "                </li>\n" .
+            "                @endif\n" .
+            "                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}\n";
+
+        // Cari posisi: sebelum </ul> terakhir
+        $lastUlPos = strrpos($content, '</ul>');
+        if ($lastUlPos !== false) {
+            $content = substr($content, 0, $lastUlPos) . $sidebarSnippet . substr($content, $lastUlPos);
+        } else {
+            // Fallback: sebelum </body>
+            $bodyPos = strpos($content, '</body>');
+            if ($bodyPos !== false) {
+                $content = substr($content, 0, $bodyPos) . $sidebarSnippet . substr($content, $bodyPos);
+            }
+        }
+
+        File::put($layoutFile, $content);
+
+        // Clear view cache agar perubahan langsung terlihat
+        exec("cd {$this->panelDir} && php artisan view:clear 2>&1");
+    }
+
+    /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
     private function checkInstalled($protectionKey, $protection)
@@ -493,6 +553,9 @@ class ProtectManagerController extends Controller
 
         // Clear cache
         exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+
+        // Re-inject sidebar Protect Manager jika hilang setelah restore
+        $this->ensureProtectManagerSidebar();
 
         return redirect()->route('admin.protect-manager')->with('success', "✅ {$prot['name']} berhasil di-uninstall! ({$restoredCount} file di-restore)");
     }
