@@ -55,6 +55,8 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
     "brand_text": "Protect By Jhonaley",
     "contact_telegram": "@danangvalentp",
     "bot_link": "@upgradeuser_bot",
+    "welcome_title": "Welcome To Server Jhonaley Store",
+    "welcome_message": "Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.",
     "protections": {
         "protect2": {
             "name": "Anti Hapus/Ubah User",
@@ -91,7 +93,7 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
                 "resources/views/templates/wrapper.blade.php"
             ],
             "enabled": false
-        }
+        },
         "protect6": {
             "name": "Anti Akses Settings",
             "description": "Memblokir akses Settings panel untuk admin selain ID 1",
@@ -158,6 +160,46 @@ fi
 
 chown www-data:www-data "$CONFIG_FILE" 2>/dev/null || true
 chmod 664 "$CONFIG_FILE"
+
+# Fix permission semua layout/view files agar www-data bisa menulis
+echo "🔧 Fixing permissions pada layout files..."
+LAYOUT_TARGETS=(
+  "$PANEL_DIR/resources/views/layouts/admin.blade.php"
+  "$PANEL_DIR/resources/views/layouts/app.blade.php"
+  "$PANEL_DIR/resources/views/layouts/master.blade.php"
+  "$PANEL_DIR/resources/views/layouts/auth.blade.php"
+  "$PANEL_DIR/resources/views/templates/wrapper.blade.php"
+  "$PANEL_DIR/resources/views/partials/admin/sidebar.blade.php"
+)
+for LF in "${LAYOUT_TARGETS[@]}"; do
+  if [ -f "$LF" ]; then
+    chown www-data:www-data "$LF" 2>/dev/null || true
+    chmod 664 "$LF" 2>/dev/null || true
+    echo "   ✅ $(basename "$LF")"
+  fi
+done
+# Juga fix permission pada views directory secara rekursif
+chown -R www-data:www-data "$PANEL_DIR/resources/views/" 2>/dev/null || true
+find "$PANEL_DIR/resources/views/" -type f -name "*.blade.php" -exec chmod 664 {} \; 2>/dev/null || true
+find "$PANEL_DIR/resources/views/" -type d -exec chmod 775 {} \; 2>/dev/null || true
+echo "✅ Semua layout files sekarang writable oleh www-data"
+
+# Setup sudoers agar www-data bisa jalankan script proteksi sebagai root
+SUDOERS_FILE="/etc/sudoers.d/pterodactyl-protect"
+if [ ! -f "$SUDOERS_FILE" ] || ! grep -q "SETENV" "$SUDOERS_FILE" 2>/dev/null; then
+  echo "🔧 Menambahkan sudoers entry untuk www-data..."
+  cat > "$SUDOERS_FILE" << 'SUDOEOF'
+# Pterodactyl Protect Manager - Allow www-data to run protect scripts as root
+www-data ALL=(root) NOPASSWD: /usr/bin/bash /var/www/pterodactyl/storage/app/protect-scripts/*.sh
+www-data ALL=(root) NOPASSWD: /bin/bash /var/www/pterodactyl/storage/app/protect-scripts/*.sh
+www-data ALL=(root) NOPASSWD: /usr/bin/bash /var/www/pterodactyl/storage/app/protect-scripts/run-*.sh
+www-data ALL=(root) NOPASSWD: /bin/bash /var/www/pterodactyl/storage/app/protect-scripts/run-*.sh
+SUDOEOF
+  chmod 440 "$SUDOERS_FILE"
+  echo "✅ Sudoers entry ditambahkan: $SUDOERS_FILE"
+else
+  echo "⚠️ Sudoers entry sudah ada, skip..."
+fi
 
 echo "✅ BAGIAN 1 SELESAI"
 
@@ -350,6 +392,40 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Jalankan script proteksi via wrapper sudo tanpa preserve env
+     */
+    private function runProtectedScript(string $scriptFile, array $config): array
+    {
+        $wrapperFile = $this->scriptsDir . '/run-' . basename($scriptFile, '.sh') . '-' . uniqid() . '.sh';
+        $wrapperContent = "#!/bin/bash\n"
+            . "set -e\n"
+            . 'export BRAND_NAME=' . escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech') . "\n"
+            . 'export BRAND_TEXT=' . escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley') . "\n"
+            . 'export CONTACT_TELEGRAM=' . escapeshellarg($config['contact_telegram'] ?? '@danangvalentp') . "\n"
+            . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
+            . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
+            . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
+            . 'exec /bin/bash ' . escapeshellarg($scriptFile) . "\n";
+
+        File::put($wrapperFile, $wrapperContent);
+        @chmod($wrapperFile, 0755);
+        @chown($wrapperFile, 'www-data');
+        @chgrp($wrapperFile, 'www-data');
+
+        $output = [];
+        $returnVar = 0;
+        $command = sprintf(
+            'cd %s && sudo /bin/bash %s 2>&1',
+            escapeshellarg($this->panelDir),
+            escapeshellarg($wrapperFile)
+        );
+        exec($command, $output, $returnVar);
+        @unlink($wrapperFile);
+
+        return [$output, $returnVar];
+    }
+
+    /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
     private function checkInstalled($protectionKey, $protection)
@@ -505,25 +581,8 @@ class ProtectManagerController extends Controller
             return redirect()->route('admin.protect-manager')->with('error', 'Script tidak ditemukan di server maupun GitHub: ' . $scriptFilename);
         }
 
-        // Set environment variables untuk script
-        $envVars = sprintf(
-            'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
-            escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
-            escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
-            escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
-            escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
-        );
-
         // Jalankan script
-        $output = [];
-        $returnVar = 0;
-        $command = sprintf(
-            'cd %s && %s bash %s 2>&1',
-            escapeshellarg($this->panelDir),
-            $envVars,
-            escapeshellarg($scriptFile)
-        );
-        exec($command, $output, $returnVar);
+        [$output, $returnVar] = $this->runProtectedScript($scriptFile, $config);
 
         $config['protections'][$key]['enabled'] = ($returnVar === 0);
         $this->saveConfig($config);
@@ -613,6 +672,8 @@ class ProtectManagerController extends Controller
         $config['brand_text'] = $request->input('brand_text', $config['brand_text']);
         $config['contact_telegram'] = $request->input('contact_telegram', $config['contact_telegram']);
         $config['bot_link'] = $request->input('bot_link', $config['bot_link']);
+        $config['welcome_title'] = $request->input('welcome_title', $config['welcome_title'] ?? '');
+        $config['welcome_message'] = $request->input('welcome_message', $config['welcome_message'] ?? '');
 
         // Update nama dan deskripsi proteksi jika dikirim
         if ($request->has('protection_names')) {
@@ -635,53 +696,30 @@ class ProtectManagerController extends Controller
         $messages = ['✅ Konfigurasi berhasil diupdate!'];
         $outputBlocks = [];
 
-        // Re-apply semua proteksi yang sudah terpasang agar teks brand diperbarui
-        $envVars = sprintf(
-            'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
-            escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
-            escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
-            escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
-            escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
-        );
-
-        $reapplied = 0;
-        foreach ($config['protections'] as $key => $prot) {
-            if (!$this->checkInstalled($key, $prot)) {
-                continue;
-            }
-
-            $scriptFilename = 'install' . $key . '.sh';
+        // Hanya re-apply protect5 (branding) jika terinstall, BUKAN semua proteksi
+        // Ini mencegah layout admin rusak karena re-run semua script sekaligus
+        $protect5Key = 'protect5';
+        if (isset($config['protections'][$protect5Key]) && $this->checkInstalled($protect5Key, $config['protections'][$protect5Key])) {
+            $scriptFilename = 'installprotect5.sh';
             $scriptFile = $this->scriptsDir . '/' . $scriptFilename;
 
-            if (!$this->ensureScriptExists($scriptFilename)) {
-                continue;
+            if ($this->ensureScriptExists($scriptFilename)) {
+                [$output, $returnVar] = $this->runProtectedScript($scriptFile, $config);
+
+                if ($returnVar === 0) {
+                    $config['protections'][$protect5Key]['enabled'] = true;
+                    $this->saveConfig($config);
+                    $this->ensureProtectManagerSidebar();
+                    $messages[] = '🔄 Branding otomatis diterapkan ulang dengan brand baru.';
+                } else {
+                    $messages[] = '⚠️ Gagal re-apply branding. Cek output di bawah.';
+                }
+
+                $outputText = trim(implode("\n", $output));
+                if ($outputText !== '') {
+                    $outputBlocks[] = '[protect5]' . "\n" . $outputText;
+                }
             }
-
-            $output = [];
-            $returnVar = 0;
-            $command = sprintf(
-                'cd %s && %s bash %s 2>&1',
-                escapeshellarg($this->panelDir),
-                $envVars,
-                escapeshellarg($scriptFile)
-            );
-            exec($command, $output, $returnVar);
-
-            if ($returnVar === 0) {
-                $config['protections'][$key]['enabled'] = true;
-                $reapplied++;
-            }
-
-            $outputText = trim(implode("\n", $output));
-            if ($outputText !== '') {
-                $outputBlocks[] = '[' . $key . ']' . "\n" . $outputText;
-            }
-        }
-
-        if ($reapplied > 0) {
-            $this->saveConfig($config);
-            $this->ensureProtectManagerSidebar();
-            $messages[] = "🔄 {$reapplied} proteksi otomatis diterapkan ulang dengan brand baru.";
         }
 
         $redirect = redirect()->route('admin.protect-manager')->with('success', implode("\n", $messages));
@@ -740,23 +778,7 @@ class ProtectManagerController extends Controller
                 continue;
             }
 
-            $envVars = sprintf(
-                'BRAND_NAME=%s BRAND_TEXT=%s CONTACT_TELEGRAM=%s BOT_LINK=%s',
-                escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech'),
-                escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley'),
-                escapeshellarg($config['contact_telegram'] ?? '@danangvalentp'),
-                escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot')
-            );
-
-            $output = [];
-            $returnVar = 0;
-            $command = sprintf(
-                'cd %s && %s bash %s 2>&1',
-                escapeshellarg($this->panelDir),
-                $envVars,
-                escapeshellarg($scriptFile)
-            );
-            exec($command, $output, $returnVar);
+            [$output, $returnVar] = $this->runProtectedScript($scriptFile, $config);
 
             if ($returnVar === 0) {
                 $config['protections'][$key]['enabled'] = true;
@@ -1179,6 +1201,25 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
                     <div class="form-group">
                         <label class="config-label">Link Bot</label>
                         <input type="text" name="bot_link" value="{{ $config['bot_link'] ?? '@upgradeuser_bot' }}" class="config-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Welcome Banner Settings --}}
+        <div class="config-section">
+            <h3>📋 Pengaturan Welcome Banner</h3>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Judul Welcome Banner</label>
+                        <input type="text" name="welcome_title" value="{{ $config['welcome_title'] ?? 'Welcome To Server Jhonaley Store' }}" class="config-input" placeholder="Welcome To Server Jhonaley Store">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Pesan Welcome Banner</label>
+                        <textarea name="welcome_message" class="config-input" rows="3" placeholder="Teks welcome banner...">{{ $config['welcome_message'] ?? 'Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.' }}</textarea>
                     </div>
                 </div>
             </div>

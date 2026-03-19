@@ -8,6 +8,8 @@ BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
 BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
 CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
 BOT_LINK="${BOT_LINK:-@upgradeuser_bot}"
+WELCOME_TITLE="${WELCOME_TITLE:-Welcome To Server $BRAND_NAME}"
+WELCOME_MESSAGE="${WELCOME_MESSAGE:-Butuh panel legal yang anti mokad? langsung aja ke $BOT_LINK. Jika ada kendala dan ada yang ingin di tanyakan hubungi $CONTACT_TELEGRAM.}"
 
 TELEGRAM_USERNAME="${CONTACT_TELEGRAM#@}"
 BOT_USERNAME="${BOT_LINK#@}"
@@ -37,6 +39,8 @@ CONTACT_TELEGRAM_HTML=$(html_escape "$CONTACT_TELEGRAM")
 BOT_LINK_HTML=$(html_escape "$BOT_LINK")
 BRAND_NAME_JS=$(js_escape "$BRAND_NAME")
 CONTACT_TELEGRAM_JS=$(js_escape "$CONTACT_TELEGRAM")
+WELCOME_TITLE_JS=$(js_escape "$WELCOME_TITLE")
+WELCOME_MESSAGE_JS=$(js_escape "$WELCOME_MESSAGE")
 SAFE_TITLE=$(sed_escape "$BRAND_NAME")
 
 can_modify_file() {
@@ -703,7 +707,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>Welcome to $BRAND_NAME_JS</h3><p>Terimakasih telah order di $BRAND_NAME_JS. Jika ada kendala hubungi <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$CONTACT_TELEGRAM_JS</a></p></div>';
+    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>$WELCOME_TITLE_JS</h3><p>$WELCOME_MESSAGE_JS</p></div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }
