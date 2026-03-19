@@ -1219,6 +1219,70 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "📌 BAGIAN 5: Tambah Sidebar Menu"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+ensure_protect_manager_sidebar() {
+    local target_file="$1"
+
+    if [ -z "$target_file" ] || [ ! -f "$target_file" ]; then
+        echo "⚠️ Layout sidebar tidak ditemukan, skip pemulihan sidebar"
+        return 0
+    fi
+
+    if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR\|admin.protect-manager" "$target_file" 2>/dev/null; then
+        echo "ℹ️ Sidebar Protect Manager sudah ada di $target_file"
+        return 0
+    fi
+
+    cp "$target_file" "${target_file}.bak_pm_${TIMESTAMP}" 2>/dev/null || true
+
+    local settings_line=""
+    settings_line=$(grep -n "Settings\|settings\|Configuration" "$target_file" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
+    if [ -z "$settings_line" ]; then
+        settings_line=$(grep -n "</ul>" "$target_file" | tail -1 | cut -d: -f1)
+    fi
+
+    if [ -z "$settings_line" ]; then
+        echo "⚠️ Tidak bisa menemukan posisi sidebar yang tepat"
+        echo "📝 Tambahkan manual di layout file:"
+        echo '   @if(Auth::user() && Auth::user()->id === 1)'
+        echo '   <li><a href="{{ route('\''admin.protect-manager'\'') }}"><i class="fa fa-shield"></i> <span>Protect Manager</span></a></li>'
+        echo '   @endif'
+        return 0
+    fi
+
+    local total_lines
+    local insert_line
+    local temp_file
+
+    total_lines=$(wc -l < "$target_file")
+    insert_line=$settings_line
+    for i in $(seq "$settings_line" $((settings_line + 15))); do
+        if [ "$i" -gt "$total_lines" ]; then break; fi
+        if sed -n "${i}p" "$target_file" | grep -q "</li>"; then
+            insert_line=$i
+            break
+        fi
+    done
+
+    temp_file=$(mktemp)
+    head -n "$insert_line" "$target_file" > "$temp_file"
+    cat >> "$temp_file" << 'SIDEBAREOF'
+                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
+                @if(Auth::user() && Auth::user()->id === 1)
+                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
+                    <a href="{{ route('admin.protect-manager') }}">
+                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
+                    </a>
+                </li>
+                @endif
+                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
+SIDEBAREOF
+    tail -n +"$((insert_line + 1))" "$target_file" >> "$temp_file"
+    mv "$temp_file" "$target_file"
+    chmod 644 "$target_file"
+
+    echo "✅ Sidebar menu ditambahkan di baris $insert_line"
+}
+
 # Cari file layout admin
 LAYOUT_FILE=""
 LAYOUT_CANDIDATES=(
@@ -1239,63 +1303,7 @@ if [ -z "$LAYOUT_FILE" ]; then
     echo "⏭️ Skip penambahan sidebar. Tambahkan manual."
 else
     echo "📂 Layout ditemukan: $LAYOUT_FILE"
-    cp "$LAYOUT_FILE" "${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
-    echo "💾 Backup: ${LAYOUT_FILE}.bak_pm_${TIMESTAMP}"
-
-    if grep -q "PROTEKSI_JHONALEY_MASTER_SIDEBAR" "$LAYOUT_FILE"; then
-        echo "⚠️ Sidebar Protect Manager sudah ada, skip..."
-    else
-        # Cari posisi sidebar - biasanya sebelum </ul> terakhir atau sebelum tag tertentu
-        # Strategi: cari baris terakhir yang mengandung "</li>" di dalam sidebar
-        # dan inject setelahnya
-
-        # Metode 1: Cari "Settings" menu item sebagai anchor point (biasanya terakhir)
-        SETTINGS_LINE=$(grep -n "Settings\|settings\|Configuration" "$LAYOUT_FILE" | grep -i "href\|route\|url" | tail -1 | cut -d: -f1)
-        
-        if [ -z "$SETTINGS_LINE" ]; then
-            # Metode 2: Cari </ul> terakhir di sidebar
-            SETTINGS_LINE=$(grep -n "</ul>" "$LAYOUT_FILE" | tail -1 | cut -d: -f1)
-        fi
-
-        if [ -n "$SETTINGS_LINE" ]; then
-            # Cari </li> terdekat setelah SETTINGS_LINE
-            TOTAL_LINES=$(wc -l < "$LAYOUT_FILE")
-            INSERT_LINE=$SETTINGS_LINE
-            for i in $(seq "$SETTINGS_LINE" $((SETTINGS_LINE + 15))); do
-                if [ "$i" -gt "$TOTAL_LINES" ]; then break; fi
-                if sed -n "${i}p" "$LAYOUT_FILE" | grep -q "</li>"; then
-                    INSERT_LINE=$i
-                    break
-                fi
-            done
-
-            # Inject sidebar menu setelah INSERT_LINE menggunakan temp file
-            TEMP_FILE=$(mktemp)
-            head -n "$INSERT_LINE" "$LAYOUT_FILE" > "$TEMP_FILE"
-            cat >> "$TEMP_FILE" << 'SIDEBAREOF'
-                {{-- PROTEKSI_JHONALEY_MASTER_SIDEBAR: Protect Manager Menu --}}
-                @if(Auth::user() && Auth::user()->id === 1)
-                <li class="{{ Route::currentRouteName() === 'admin.protect-manager' ? 'active' : '' }}">
-                    <a href="{{ route('admin.protect-manager') }}">
-                        <i class="fa fa-shield"></i> <span>Protect Manager</span>
-                    </a>
-                </li>
-                @endif
-                {{-- END PROTEKSI_JHONALEY_MASTER_SIDEBAR --}}
-SIDEBAREOF
-            tail -n +"$((INSERT_LINE + 1))" "$LAYOUT_FILE" >> "$TEMP_FILE"
-            mv "$TEMP_FILE" "$LAYOUT_FILE"
-            chmod 644 "$LAYOUT_FILE"
-            
-            echo "✅ Sidebar menu ditambahkan di baris $INSERT_LINE"
-        else
-            echo "⚠️ Tidak bisa menemukan posisi sidebar yang tepat"
-            echo "📝 Tambahkan manual di layout file:"
-            echo '   @if(Auth::user() && Auth::user()->id === 1)'
-            echo '   <li><a href="{{ route('\''admin.protect-manager'\'') }}"><i class="fa fa-shield"></i> <span>Protect Manager</span></a></li>'
-            echo '   @endif'
-        fi
-    fi
+    ensure_protect_manager_sidebar "$LAYOUT_FILE"
 fi
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
