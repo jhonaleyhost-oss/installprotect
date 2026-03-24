@@ -60,12 +60,12 @@ class FileController extends ClientApiController
         $user = $request->user();
 
         // Admin (user id = 1) bebas akses semua
-        if ((int) $user->id === 1) {
+        if ($user->id === 1) {
             return;
         }
 
         // Jika server bukan milik user, tolak akses
-        if ((int) $server->owner_id !== (int) $user->id) {
+        if ($server->owner_id !== $user->id) {
             abort(403, 'Anda tidak memiliki akses ke server ini.');
         }
     }

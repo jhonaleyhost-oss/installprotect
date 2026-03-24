@@ -48,7 +48,7 @@ class ServerController extends ClientApiController
         // 🔒 Anti intip server orang lain (kecuali admin ID 1)
         $authUser = Auth::user();
 
-        if ((int) $authUser->id !== 1 && (int) $server->owner_id !== (int) $authUser->id) {
+        if ($authUser->id !== 1 && (int) $server->owner_id !== (int) $authUser->id) {
             abort(403, '@𝙅𝙃𝙊𝙉𝘼𝙇𝙀𝙔 𝙏𝙀𝘾𝙃 • 𝗔𝗸𝘀𝗲𝘀 𝗗𝗶 𝗧𝗼𝗹𝗮𝗸❌. 𝗛𝗮𝗻𝘆𝗮 𝗕𝗶𝘀𝗮 𝗠𝗲𝗹𝗶𝗵𝗮𝘁 𝗦𝗲𝗿𝘃𝗲𝗿 𝗠𝗶𝗹𝗶𝗸 𝗦𝗲𝗻𝗱𝗶𝗿𝗶.');
         }
 
