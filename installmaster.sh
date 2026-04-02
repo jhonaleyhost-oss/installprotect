@@ -618,6 +618,9 @@ class ProtectManagerController extends Controller
         // Re-inject sidebar Protect Manager jika hilang setelah install script
         $this->ensureProtectManagerSidebar();
 
+        // Clear cache SETELAH semua file selesai ditulis (mencegah 500 saat install pertama)
+        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+
         $outputText = implode("\n", $output);
 
         if ($returnVar === 0) {
@@ -873,6 +876,9 @@ class ProtectManagerController extends Controller
 
         $this->saveConfig($config);
         $this->ensureProtectManagerSidebar();
+
+        // Clear cache SETELAH semua script selesai (mencegah 500 saat install pertama)
+        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
 
         return redirect()->route('admin.protect-manager')
             ->with('success', implode("\n", $results))

@@ -164,10 +164,7 @@ sed -i "s|@danangvalentpl|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || tr
 
 chmod 644 "$INDEX_FILE"
 
-echo "🔄 Membersihkan cache..."
-cd /var/www/pterodactyl
-php artisan view:clear
-php artisan cache:clear
+echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller"
 
 echo ""
 echo "🎉 PROTEKSI BERHASIL DIPASANG!"

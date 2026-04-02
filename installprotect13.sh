@@ -185,12 +185,7 @@ if [ -f "$API_CONTROLLER" ]; then
   sed -i "s|Akses Application API tidak diizinkan|${BRAND_TEXT} - Akses ditolak|g" "$API_CONTROLLER" 2>/dev/null || true
 fi
 
-cd "$PANEL_DIR"
-php artisan route:clear 2>/dev/null || true
-php artisan config:clear 2>/dev/null || true
-php artisan cache:clear 2>/dev/null || true
-php artisan view:clear 2>/dev/null || true
-echo "✅ Semua cache dibersihkan"
+echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller"
 
 echo ""
 echo "==========================================="

@@ -970,14 +970,9 @@ done
 echo "✅ Brand customization diterapkan"
 
 # ===================================================================
-# CLEAR CACHE
+# CLEAR CACHE - di-handle oleh controller
 # ===================================================================
-cd /var/www/pterodactyl
-php artisan route:clear 2>/dev/null
-php artisan config:clear 2>/dev/null
-php artisan cache:clear 2>/dev/null
-php artisan view:clear 2>/dev/null
-echo "✅ Semua cache dibersihkan"
+echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller"
 
 echo ""
 echo "==========================================="

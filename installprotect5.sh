@@ -410,13 +410,8 @@ else
   echo "⚠️ File sidebar tidak ditemukan."
 fi
 
-# === LANGKAH 5: Clear semua cache ===
-cd /var/www/pterodactyl
-php artisan route:clear 2>/dev/null
-php artisan config:clear 2>/dev/null
-php artisan cache:clear 2>/dev/null
-php artisan view:clear 2>/dev/null
-echo "✅ Semua cache dibersihkan"
+# === LANGKAH 5: Cache clear di-handle oleh controller ===
+echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller setelah install selesai"
 
 echo ""
 echo "==========================================="
@@ -794,12 +789,9 @@ SIDEBAR_PM_EOF
 fi
 
 # ===================================================================
-# CLEAR CACHE
+# CLEAR CACHE - di-handle oleh controller
 # ===================================================================
-cd /var/www/pterodactyl
-php artisan view:clear 2>/dev/null
-php artisan cache:clear 2>/dev/null
-echo "✅ Cache dibersihkan"
+echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller"
 
 echo ""
 echo "==========================================="
