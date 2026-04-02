@@ -36,13 +36,21 @@ chmod 755 "$SCRIPTS_DIR"
 # Download semua script proteksi dari GitHub
 GITHUB_URL="https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main"
 echo "📥 Mendownload script proteksi dari GitHub..."
-for i in 2 3 4 5 6 7 8 9 10 11 12 13; do
-    if curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "$GITHUB_URL/installprotect${i}.sh"; then
-        chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"
-        echo "   ✅ installprotect${i}.sh"
-    else
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+    DOWNLOADED=false
+    for attempt in 1 2 3; do
+        if curl -fsSL --retry 2 --retry-delay 3 -o "$SCRIPTS_DIR/installprotect${i}.sh" "$GITHUB_URL/installprotect${i}.sh" 2>/dev/null; then
+            chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"
+            echo "   ✅ installprotect${i}.sh"
+            DOWNLOADED=true
+            break
+        fi
+        echo "   ⏳ Retry ${attempt}/3 untuk installprotect${i}.sh..."
+        sleep 3
+    done
+    if [ "$DOWNLOADED" = false ]; then
         rm -f "$SCRIPTS_DIR/installprotect${i}.sh"
-        echo "   ⚠️ Gagal download installprotect${i}.sh"
+        echo "   ⚠️ Gagal download installprotect${i}.sh (setelah 3 percobaan)"
     fi
 done
 echo "✅ Download script selesai ke $SCRIPTS_DIR"
