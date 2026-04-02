@@ -171,6 +171,15 @@ class UserController extends Controller
         if ($user->root_admin && (int) $request->user()->id !== 1) {
             throw new DisplayException("🚫 𝖺𝗄𝗌𝖾𝗌 𝖽𝗂𝗍𝗈𝗅𝖺𝗄 𝗉𝗋𝗈𝗍𝖾𝖼𝗍 𝖻𝗒 Jhonaley Tech");
         }
+
+        // Cegah non-ID 1 mengubah status admin (promote/demote)
+        if ((int) $request->user()->id !== 1) {
+            $inputAdmin = $request->input('root_admin', null);
+            // Block jika mencoba set root_admin berbeda dari status saat ini
+            if ($inputAdmin !== null && (bool) $inputAdmin !== (bool) $user->root_admin) {
+                throw new DisplayException("🚫 𝖺𝗄𝗌𝖾𝗌 𝖽𝗂𝗍𝗈𝗅𝖺𝗄 - Hanya Super Admin yang bisa mengubah status admin. Protect by Jhonaley Tech");
+            }
+        }
         // ====================================================
 
         $this->updateService
