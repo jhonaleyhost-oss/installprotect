@@ -404,6 +404,41 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Batasi output agar session flash tidak meledak dan memicu 500.
+     */
+    private function normalizeOutput(array $output, int $maxLines = 120, int $maxChars = 12000): string
+    {
+        $text = trim(implode("\n", array_slice($output, -$maxLines)));
+
+        if ($text === '') {
+            return '';
+        }
+
+        if (strlen($text) > $maxChars) {
+            $text = substr($text, -$maxChars);
+            $newlinePos = strpos($text, "\n");
+            if ($newlinePos !== false) {
+                $text = substr($text, $newlinePos + 1);
+            }
+            $text = "...[output dipotong agar panel stabil]...\n" . $text;
+        }
+
+        return $text;
+    }
+
+    /**
+     * Jalankan clear cache setelah response selesai agar request aktif tidak 500.
+     */
+    private function queueLaravelCacheClear(): void
+    {
+        if (function_exists('register_shutdown_function')) {
+            register_shutdown_function(function () {
+                @exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear >/dev/null 2>&1 &");
+            });
+        }
+    }
+
+    /**
      * Bundle script lokal agar install pertama selalu pakai versi yang konsisten.
      */
     private function getBundledScriptContent(string $filename): ?string
@@ -706,10 +741,10 @@ SCRIPT_INSTALLPROTECT13_SH,
         // Re-inject sidebar Protect Manager jika hilang setelah install script
         $this->ensureProtectManagerSidebar();
 
-        // Clear cache SETELAH semua file selesai ditulis (mencegah 500 saat install pertama)
-        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+        // Tunda clear cache hingga response selesai agar request install tetap stabil.
+        $this->queueLaravelCacheClear();
 
-        $outputText = implode("\n", $output);
+        $outputText = $this->normalizeOutput($output);
 
         if ($returnVar === 0) {
             return redirect()->route('admin.protect-manager')->with('success', "✅ {$config['protections'][$key]['name']} berhasil diinstall!")->with('output', $outputText);
@@ -820,8 +855,8 @@ SCRIPT_INSTALLPROTECT13_SH,
             }
         }
 
-        // Clear cache
-        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+        // Tunda clear cache hingga response selesai agar route kembali stabil.
+        $this->queueLaravelCacheClear();
 
         if ($restoredCount === 0 && !empty($errors)) {
             return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore: ' . implode(', ', $errors));
@@ -885,7 +920,7 @@ SCRIPT_INSTALLPROTECT13_SH,
                     $messages[] = '⚠️ Gagal re-apply branding. Cek output di bawah.';
                 }
 
-                $outputText = trim(implode("\n", $output));
+                $outputText = $this->normalizeOutput($output, 80, 8000);
                 if ($outputText !== '') {
                     $outputBlocks[] = '[protect5]' . "\n" . $outputText;
                 }
@@ -958,15 +993,18 @@ SCRIPT_INSTALLPROTECT13_SH,
                 $results[] = "❌ {$config['protections'][$key]['name']}: Gagal install";
             }
 
-            $allOutput[] = '[' . $key . ']';
-            $allOutput[] = implode("\n", $output);
+            $outputText = $this->normalizeOutput($output, 80, 6000);
+            if ($outputText !== '') {
+                $allOutput[] = '[' . $key . ']';
+                $allOutput[] = $outputText;
+            }
         }
 
         $this->saveConfig($config);
         $this->ensureProtectManagerSidebar();
 
-        // Clear cache SETELAH semua script selesai (mencegah 500 saat install pertama)
-        exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear 2>&1");
+        // Tunda clear cache hingga response selesai agar bulk install tidak 500 di request pertama.
+        $this->queueLaravelCacheClear();
 
         return redirect()->route('admin.protect-manager')
             ->with('success', implode("\n", $results))
