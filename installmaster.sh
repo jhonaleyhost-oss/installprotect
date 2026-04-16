@@ -274,12 +274,82 @@ class ProtectManagerController extends Controller
     private $configPath;
     private $scriptsDir;
     private $panelDir;
+    private $phpBinary;
+    private $nohupBinary;
 
     public function __construct()
     {
         $this->panelDir = base_path();
         $this->configPath = storage_path('app/protect-config.json');
         $this->scriptsDir = storage_path('app/protect-scripts');
+        $this->phpBinary = $this->resolveBinary(['PHP_BINARY', '/usr/bin/php', '/usr/local/bin/php', '/bin/php'], 'php');
+        $this->nohupBinary = $this->resolveBinary(['/usr/bin/nohup', '/bin/nohup'], 'nohup');
+    }
+
+    /**
+     * Cari binary absolut agar proses background tidak gagal karena PATH kosong dari PHP-FPM.
+     */
+    private function resolveBinary(array $candidates, string $fallback): string
+    {
+        foreach ($candidates as $candidate) {
+            if ($candidate === 'PHP_BINARY') {
+                if (defined('PHP_BINARY') && PHP_BINARY && @is_executable(PHP_BINARY)) {
+                    return PHP_BINARY;
+                }
+
+                continue;
+            }
+
+            if ($candidate && @is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * Buat perintah clear cache Laravel yang aman dipanggil dari background.
+     */
+    private function buildLaravelCacheClearCommand(): string
+    {
+        return sprintf(
+            'cd %s && %s artisan view:clear && %s artisan route:clear && %s artisan config:clear && %s artisan cache:clear',
+            escapeshellarg($this->panelDir),
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->phpBinary),
+            escapeshellarg($this->phpBinary)
+        );
+    }
+
+    /**
+     * Lepas proses ke background dengan binary absolut dan log file supaya tidak silent fail.
+     */
+    private function launchDetachedPhpJob(string $jobFile, string $logFile): bool
+    {
+        File::ensureDirectoryExists(dirname($logFile));
+
+        $launcherFile = $this->scriptsDir . '/launch-bulk-install-' . uniqid() . '.sh';
+        $launcherContent = "#!/bin/bash\n"
+            . "set -e\n"
+            . 'cd ' . escapeshellarg($this->panelDir) . "\n"
+            . 'exec ' . escapeshellarg($this->phpBinary) . ' ' . escapeshellarg($jobFile) . ' >> ' . escapeshellarg($logFile) . ' 2>&1' . "\n";
+
+        File::put($launcherFile, $launcherContent);
+        @chmod($launcherFile, 0755);
+
+        $command = sprintf(
+            '%s /bin/bash %s >/dev/null 2>&1 & echo $!',
+            escapeshellarg($this->nohupBinary),
+            escapeshellarg($launcherFile)
+        );
+
+        $output = [];
+        $returnVar = 0;
+        exec($command, $output, $returnVar);
+
+        return $returnVar === 0 && !empty($output[0]);
     }
 
     /**
@@ -476,7 +546,7 @@ class ProtectManagerController extends Controller
     {
         if (function_exists('register_shutdown_function')) {
             register_shutdown_function(function () {
-                @exec("cd {$this->panelDir} && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear >/dev/null 2>&1 &");
+                @exec($this->buildLaravelCacheClearCommand() . ' >/dev/null 2>&1 &');
             });
         }
     }
@@ -625,6 +695,7 @@ SCRIPT_INSTALLPROTECT13_SH,
             'panel_dir' => $this->panelDir,
             'config_path' => $this->configPath,
             'status_path' => $this->getBulkStatusPath(),
+            'php_binary' => $this->phpBinary,
         ];
 
         $jobScript = <<<'PHPJOB'
@@ -640,6 +711,7 @@ $scriptsDir = $payload['scripts_dir'] ?? '';
 $panelDir = $payload['panel_dir'] ?? '';
 $configPath = $payload['config_path'] ?? '';
 $statusPath = $payload['status_path'] ?? '';
+$phpBinary = $payload['php_binary'] ?? 'php';
 
 $writeStatus = function (array $status) use ($scriptsDir, $statusPath): void {
     if (!is_dir($scriptsDir)) {
@@ -736,7 +808,13 @@ foreach ($selected as $key) {
 }
 
 file_put_contents($configPath, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-@exec('cd ' . escapeshellarg($panelDir) . ' && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear >/dev/null 2>&1');
+@exec(
+    'cd ' . escapeshellarg($panelDir)
+    . ' && ' . escapeshellarg($phpBinary) . ' artisan view:clear'
+    . ' && ' . escapeshellarg($phpBinary) . ' artisan route:clear'
+    . ' && ' . escapeshellarg($phpBinary) . ' artisan config:clear'
+    . ' && ' . escapeshellarg($phpBinary) . ' artisan cache:clear >/dev/null 2>&1'
+);
 
 $writeStatus([
     'status' => 'done',
@@ -760,7 +838,17 @@ PHPJOB;
             'output' => '',
         ]);
 
-        @exec(sprintf('nohup php %s >/dev/null 2>&1 &', escapeshellarg($jobFile)));
+        $logFile = $this->scriptsDir . '/bulk-install.log';
+        $started = $this->launchDetachedPhpJob($jobFile, $logFile);
+
+        if (!$started) {
+            $this->saveBulkStatus([
+                'status' => 'failed',
+                'finished_at' => date('c'),
+                'results' => ['❌ Bulk install gagal dijalankan di background.'],
+                'output' => 'Background job gagal start. Cek binary PHP/nohup dan permission folder protect-scripts.',
+            ]);
+        }
     }
 
     /**
@@ -903,6 +991,15 @@ PHPJOB;
 
         if ($bulkStatus && ($bulkStatus['status'] ?? null) === 'done') {
             session()->flash('success', implode("\n", $bulkStatus['results'] ?? ['✅ Bulk install selesai.']));
+
+            $outputText = trim((string) ($bulkStatus['output'] ?? ''));
+            if ($outputText !== '') {
+                session()->flash('output', $outputText);
+            }
+
+            $this->clearBulkStatus();
+        } elseif ($bulkStatus && ($bulkStatus['status'] ?? null) === 'failed') {
+            session()->flash('error', implode("\n", $bulkStatus['results'] ?? ['❌ Bulk install gagal dijalankan.']));
 
             $outputText = trim((string) ($bulkStatus['output'] ?? ''));
             if ($outputText !== '') {
