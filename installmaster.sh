@@ -31,7 +31,8 @@ echo "📁 BAGIAN 1: Setup direktori & konfigurasi"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 mkdir -p "$SCRIPTS_DIR"
-chmod 755 "$SCRIPTS_DIR"
+chown -R www-data:www-data "$SCRIPTS_DIR" 2>/dev/null || true
+chmod 775 "$SCRIPTS_DIR"
 
 # Download semua script proteksi dari GitHub
 GITHUB_URL="https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main"
@@ -54,6 +55,10 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
     fi
 done
 echo "✅ Download script selesai ke $SCRIPTS_DIR"
+
+chown -R www-data:www-data "$SCRIPTS_DIR" 2>/dev/null || true
+find "$SCRIPTS_DIR" -type d -exec chmod 775 {} \; 2>/dev/null || true
+find "$SCRIPTS_DIR" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 
 write_bundled_hotfix_script() {
     local filename="$1"
@@ -197,6 +202,9 @@ fi
 
 chown www-data:www-data "$CONFIG_FILE" 2>/dev/null || true
 chmod 664 "$CONFIG_FILE"
+chown -R www-data:www-data "$SCRIPTS_DIR" 2>/dev/null || true
+find "$SCRIPTS_DIR" -type d -exec chmod 775 {} \; 2>/dev/null || true
+find "$SCRIPTS_DIR" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 
 # Fix permission semua layout/view files agar www-data bisa menulis
 echo "🔧 Fixing permissions pada layout files..."
@@ -324,11 +332,25 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Kompatibilitas Laravel lama: hindari File::ensureDirectoryExists() yang bisa memicu 500.
+     */
+    private function ensureDirectory(string $path): void
+    {
+        if ($path === '' || is_dir($path)) {
+            return;
+        }
+
+        if (!@mkdir($path, 0755, true) && !is_dir($path)) {
+            throw new \RuntimeException('Gagal membuat direktori: ' . $path);
+        }
+    }
+
+    /**
      * Lepas proses ke background dengan binary absolut dan log file supaya tidak silent fail.
      */
     private function launchDetachedPhpJob(string $jobFile, string $logFile): bool
     {
-        File::ensureDirectoryExists(dirname($logFile));
+        $this->ensureDirectory(dirname($logFile));
 
         $launcherFile = $this->scriptsDir . '/launch-bulk-install-' . uniqid() . '.sh';
         $launcherContent = "#!/bin/bash\n"
@@ -486,7 +508,7 @@ class ProtectManagerController extends Controller
      */
     private function saveBulkStatus(array $status): void
     {
-        File::ensureDirectoryExists($this->scriptsDir);
+        $this->ensureDirectory($this->scriptsDir);
         File::put($this->getBulkStatusPath(), json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
@@ -623,7 +645,7 @@ SCRIPT_INSTALLPROTECT13_SH,
 
         $bundledContent = $this->getBundledScriptContent($filename);
         if ($bundledContent !== null && trim($bundledContent) !== '') {
-            File::ensureDirectoryExists($this->scriptsDir);
+            $this->ensureDirectory($this->scriptsDir);
             if (!File::exists($scriptPath) || File::get($scriptPath) !== $bundledContent) {
                 File::put($scriptPath, $bundledContent);
             }
@@ -641,7 +663,7 @@ SCRIPT_INSTALLPROTECT13_SH,
             return false;
         }
 
-        File::ensureDirectoryExists($this->scriptsDir);
+        $this->ensureDirectory($this->scriptsDir);
         File::put($scriptPath, $content);
         @chmod($scriptPath, 0755);
 
@@ -653,6 +675,8 @@ SCRIPT_INSTALLPROTECT13_SH,
      */
     private function runProtectedScript(string $scriptFile, array $config): array
     {
+        $this->ensureDirectory($this->scriptsDir);
+        @chmod($this->scriptsDir, 0775);
         $wrapperFile = $this->scriptsDir . '/run-' . basename($scriptFile, '.sh') . '-' . uniqid() . '.sh';
         $wrapperContent = "#!/bin/bash\n"
             . "set -e\n"
@@ -1179,6 +1203,11 @@ PHPJOB;
         $this->authorizeAccess();
         $config = $this->getConfig();
 
+        // Block config changes if protect5 is active
+        if (!empty($config['protections']['protect5']['enabled'])) {
+            return redirect()->route('admin.protect-manager')->with('error', '⚠️ Tidak bisa mengubah konfigurasi saat Protect 5 (Nests + Branding + Welcome Banner) masih aktif. Uninstall dulu Protect 5 sebelum mengubah konfigurasi.');
+        }
+
         $config['brand_name'] = $request->input('brand_name', $config['brand_name']);
         $config['brand_text'] = $request->input('brand_text', $config['brand_text']);
         $config['contact_telegram'] = $request->input('contact_telegram', $config['contact_telegram']);
@@ -1252,6 +1281,7 @@ PHPJOB;
         if ($request->hasFile('script_file')) {
             $file = $request->file('script_file');
             $filename = $file->getClientOriginalName();
+            $this->ensureDirectory($this->scriptsDir);
             $file->move($this->scriptsDir, $filename);
             chmod($this->scriptsDir . '/' . $filename, 0755);
 
@@ -1296,10 +1326,48 @@ PHPJOB;
             return redirect()->route('admin.protect-manager')->with('error', implode("\n", $warnings ?: ['❌ Tidak ada script valid untuk diinstall.']));
         }
 
-        $this->dispatchBulkInstallJob($validSelected, $config);
+        // Jalankan sinkron satu per satu (seperti single install) agar tidak silent-fail
+        $results = [];
+        $allOutput = [];
 
-        return redirect()->route('admin.protect-manager')
-            ->with('success', trim(implode("\n", array_merge(['⏳ Bulk install dimulai di background. Refresh halaman ini beberapa detik lagi untuk melihat hasilnya.'], $warnings))));
+        foreach ($validSelected as $key) {
+            $scriptFile = $this->scriptsDir . '/install' . $key . '.sh';
+
+            try {
+                [$output, $returnVar] = $this->runProtectedScript($scriptFile, $config);
+
+                if ($returnVar === 0) {
+                    $config['protections'][$key]['enabled'] = true;
+                    $results[] = '✅ ' . ($config['protections'][$key]['name'] ?? $key) . ': Berhasil';
+                } else {
+                    $config['protections'][$key]['enabled'] = false;
+                    $results[] = '❌ ' . ($config['protections'][$key]['name'] ?? $key) . ': Gagal';
+                }
+
+                $outputText = $this->normalizeOutput($output, 40, 3000);
+                if ($outputText !== '') {
+                    $allOutput[] = '[' . $key . '] ' . $outputText;
+                }
+            } catch (\Exception $e) {
+                $results[] = '❌ ' . ($config['protections'][$key]['name'] ?? $key) . ': ' . $e->getMessage();
+            }
+        }
+
+        $this->saveConfig($config);
+        $this->ensureProtectManagerSidebar();
+        $this->queueLaravelCacheClear();
+
+        $allResults = array_merge($results, $warnings);
+        $combinedOutput = $this->normalizeOutput($allOutput, 80, 8000);
+
+        $redirect = redirect()->route('admin.protect-manager')
+            ->with('success', implode("\n", $allResults));
+
+        if ($combinedOutput !== '') {
+            $redirect = $redirect->with('output', $combinedOutput);
+        }
+
+        return $redirect;
     }
 }
 PHPEOF
@@ -1674,8 +1742,21 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
 
 {{-- TAB: Konfigurasi --}}
 <div id="tab-config" style="display: none;">
+    @php $protect5Active = !empty($config['protections']['protect5']['enabled']); @endphp
+
+    @if($protect5Active)
+    <div style="background: linear-gradient(135deg, #f59e0b22, #f59e0b11); border: 1px solid #f59e0b55; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 24px;">⚠️</span>
+        <div>
+            <strong style="color: #fbbf24;">Konfigurasi Terkunci</strong>
+            <p style="color: #d4a017; margin: 4px 0 0; font-size: 13px;">Protect 5 (Nests + Branding + Welcome Banner) sedang aktif. Uninstall dulu Protect 5 sebelum mengubah konfigurasi, agar panel tidak blank putih.</p>
+        </div>
+    </div>
+    @endif
+
     <form action="{{ route('admin.protect-manager.update-config') }}" method="POST">
         @csrf
+        <fieldset @if($protect5Active) disabled @endif style="border:none;padding:0;margin:0;">
         
         {{-- Brand Settings --}}
         <div class="config-section">
@@ -1748,8 +1829,9 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
         </div>
 
         <div style="text-align: right; margin-top: 15px;">
-            <button type="submit" class="btn-save-config">💾 Simpan Konfigurasi</button>
+            <button type="submit" class="btn-save-config" @if($protect5Active) disabled style="opacity:0.5;cursor:not-allowed;" @endif>💾 Simpan Konfigurasi</button>
         </div>
+        </fieldset>
     </form>
 </div>
 
