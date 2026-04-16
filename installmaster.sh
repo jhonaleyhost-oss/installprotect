@@ -404,6 +404,49 @@ class ProtectManagerController extends Controller
     }
 
     /**
+     * Lokasi file status bulk install agar hasil async bisa ditampilkan setelah redirect.
+     */
+    private function getBulkStatusPath(): string
+    {
+        return $this->scriptsDir . '/bulk-install-status.json';
+    }
+
+    /**
+     * Simpan status bulk install.
+     */
+    private function saveBulkStatus(array $status): void
+    {
+        File::ensureDirectoryExists($this->scriptsDir);
+        File::put($this->getBulkStatusPath(), json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Ambil status bulk install terakhir.
+     */
+    private function getBulkStatus(): ?array
+    {
+        $path = $this->getBulkStatusPath();
+        if (!File::exists($path)) {
+            return null;
+        }
+
+        $decoded = json_decode(File::get($path), true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Hapus status bulk install setelah selesai ditampilkan.
+     */
+    private function clearBulkStatus(): void
+    {
+        $path = $this->getBulkStatusPath();
+        if (File::exists($path)) {
+            @unlink($path);
+        }
+    }
+
+    /**
      * Batasi output agar session flash tidak meledak dan memicu 500.
      */
     private function normalizeOutput(array $output, int $maxLines = 120, int $maxChars = 12000): string
@@ -570,6 +613,157 @@ SCRIPT_INSTALLPROTECT13_SH,
     }
 
     /**
+     * Jalankan bulk install di background agar request web tidak timeout/500.
+     */
+    private function dispatchBulkInstallJob(array $selected, array $config): void
+    {
+        $jobFile = $this->scriptsDir . '/bulk-install-job-' . uniqid() . '.php';
+        $payload = [
+            'selected' => array_values($selected),
+            'config' => $config,
+            'scripts_dir' => $this->scriptsDir,
+            'panel_dir' => $this->panelDir,
+            'config_path' => $this->configPath,
+            'status_path' => $this->getBulkStatusPath(),
+        ];
+
+        $jobScript = <<<'PHPJOB'
+<?php
+$payload = json_decode(base64_decode('__PAYLOAD__'), true);
+if (!is_array($payload)) {
+    exit(1);
+}
+
+$selected = $payload['selected'] ?? [];
+$config = $payload['config'] ?? ['protections' => []];
+$scriptsDir = $payload['scripts_dir'] ?? '';
+$panelDir = $payload['panel_dir'] ?? '';
+$configPath = $payload['config_path'] ?? '';
+$statusPath = $payload['status_path'] ?? '';
+
+$writeStatus = function (array $status) use ($scriptsDir, $statusPath): void {
+    if (!is_dir($scriptsDir)) {
+        @mkdir($scriptsDir, 0755, true);
+    }
+
+    file_put_contents($statusPath, json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+};
+
+$normalizeOutput = function (array $output, int $maxLines = 80, int $maxChars = 6000): string {
+    $text = trim(implode("\n", array_slice($output, -$maxLines)));
+    if ($text === '') {
+        return '';
+    }
+
+    if (strlen($text) > $maxChars) {
+        $text = substr($text, -$maxChars);
+        $newlinePos = strpos($text, "\n");
+        if ($newlinePos !== false) {
+            $text = substr($text, $newlinePos + 1);
+        }
+        $text = "...[output dipotong agar panel stabil]...\n" . $text;
+    }
+
+    return $text;
+};
+
+$runProtectedScript = function (string $scriptFile, array $config) use ($scriptsDir, $panelDir): array {
+    $wrapperFile = $scriptsDir . '/run-' . basename($scriptFile, '.sh') . '-' . uniqid() . '.sh';
+    $wrapperContent = "#!/bin/bash\n"
+        . "set -e\n"
+        . 'export BRAND_NAME=' . escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech') . "\n"
+        . 'export BRAND_TEXT=' . escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley') . "\n"
+        . 'export CONTACT_TELEGRAM=' . escapeshellarg($config['contact_telegram'] ?? '@danangvalentp') . "\n"
+        . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
+        . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
+        . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
+        . 'exec /bin/bash ' . escapeshellarg($scriptFile) . "\n";
+
+    file_put_contents($wrapperFile, $wrapperContent);
+    @chmod($wrapperFile, 0755);
+
+    $output = [];
+    $returnVar = 0;
+    exec('cd ' . escapeshellarg($panelDir) . ' && sudo /bin/bash ' . escapeshellarg($wrapperFile) . ' 2>&1', $output, $returnVar);
+    @unlink($wrapperFile);
+
+    return [$output, $returnVar];
+};
+
+$results = [];
+$allOutput = [];
+
+$writeStatus([
+    'status' => 'running',
+    'started_at' => date('c'),
+    'results' => [],
+    'output' => '',
+]);
+
+foreach ($selected as $key) {
+    if (!isset($config['protections'][$key])) {
+        continue;
+    }
+
+    $scriptFile = rtrim($scriptsDir, '/') . '/install' . $key . '.sh';
+    if (!is_file($scriptFile)) {
+        $results[] = '⚠️ ' . ($config['protections'][$key]['name'] ?? $key) . ': Script tidak ditemukan di server';
+        continue;
+    }
+
+    [$output, $returnVar] = $runProtectedScript($scriptFile, $config);
+
+    if ($returnVar === 0) {
+        $config['protections'][$key]['enabled'] = true;
+        $results[] = '✅ ' . ($config['protections'][$key]['name'] ?? $key) . ': Berhasil diinstall';
+    } else {
+        $config['protections'][$key]['enabled'] = false;
+        $results[] = '❌ ' . ($config['protections'][$key]['name'] ?? $key) . ': Gagal install';
+    }
+
+    $outputText = $normalizeOutput($output, 80, 6000);
+    if ($outputText !== '') {
+        $allOutput[] = '[' . $key . ']';
+        $allOutput[] = $outputText;
+    }
+
+    $writeStatus([
+        'status' => 'running',
+        'started_at' => date('c'),
+        'results' => $results,
+        'output' => trim(implode("\n\n", $allOutput)),
+    ]);
+}
+
+file_put_contents($configPath, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+@exec('cd ' . escapeshellarg($panelDir) . ' && php artisan view:clear && php artisan route:clear && php artisan config:clear && php artisan cache:clear >/dev/null 2>&1');
+
+$writeStatus([
+    'status' => 'done',
+    'finished_at' => date('c'),
+    'results' => $results,
+    'output' => trim(implode("\n\n", $allOutput)),
+]);
+
+@unlink(__FILE__);
+PHPJOB;
+
+        $jobScript = str_replace('__PAYLOAD__', base64_encode(json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $jobScript);
+
+        File::put($jobFile, $jobScript);
+        @chmod($jobFile, 0644);
+
+        $this->saveBulkStatus([
+            'status' => 'running',
+            'started_at' => date('c'),
+            'results' => [],
+            'output' => '',
+        ]);
+
+        @exec(sprintf('nohup php %s >/dev/null 2>&1 &', escapeshellarg($jobFile)));
+    }
+
+    /**
      * Cek apakah proteksi sudah terinstall dengan memeriksa marker di file target
      */
     private function checkInstalled($protectionKey, $protection)
@@ -700,15 +894,30 @@ SCRIPT_INSTALLPROTECT13_SH,
     {
         $this->authorizeAccess();
         $config = $this->getConfig();
+        $bulkStatus = $this->getBulkStatus();
 
         // Cek status install setiap proteksi
         foreach ($config['protections'] as $key => &$prot) {
             $prot['installed'] = $this->checkInstalled($key, $prot);
         }
 
+        if ($bulkStatus && ($bulkStatus['status'] ?? null) === 'done') {
+            session()->flash('success', implode("\n", $bulkStatus['results'] ?? ['✅ Bulk install selesai.']));
+
+            $outputText = trim((string) ($bulkStatus['output'] ?? ''));
+            if ($outputText !== '') {
+                session()->flash('output', $outputText);
+            }
+
+            $this->clearBulkStatus();
+        } elseif ($bulkStatus && ($bulkStatus['status'] ?? null) === 'running') {
+            session()->flash('success', '⏳ Bulk install sedang berjalan di background. Refresh halaman ini beberapa detik lagi untuk melihat hasilnya.');
+        }
+
         return view('admin.protect-manager', [
             'config' => $config,
             'protections' => $config['protections'],
+            'bulkStatus' => $bulkStatus,
         ]);
     }
 
@@ -963,12 +1172,13 @@ SCRIPT_INSTALLPROTECT13_SH,
         $this->authorizeAccess();
         $selected = $request->input('selected_protections', []);
         $config = $this->getConfig();
-        $results = [];
-        $allOutput = [];
 
         if (empty($selected)) {
             return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada proteksi yang dipilih.');
         }
+
+        $validSelected = [];
+        $warnings = [];
 
         foreach ($selected as $key) {
             if (!isset($config['protections'][$key])) {
@@ -976,39 +1186,23 @@ SCRIPT_INSTALLPROTECT13_SH,
             }
 
             $scriptFilename = 'install' . $key . '.sh';
-            $scriptFile = $this->scriptsDir . '/' . $scriptFilename;
 
             if (!$this->ensureScriptExists($scriptFilename)) {
-                $results[] = "⚠️ {$config['protections'][$key]['name']}: Script tidak ditemukan di server maupun GitHub";
+                $warnings[] = "⚠️ {$config['protections'][$key]['name']}: Script tidak ditemukan di server maupun GitHub";
                 continue;
             }
 
-            [$output, $returnVar] = $this->runProtectedScript($scriptFile, $config);
-
-            if ($returnVar === 0) {
-                $config['protections'][$key]['enabled'] = true;
-                $results[] = "✅ {$config['protections'][$key]['name']}: Berhasil diinstall";
-            } else {
-                $config['protections'][$key]['enabled'] = false;
-                $results[] = "❌ {$config['protections'][$key]['name']}: Gagal install";
-            }
-
-            $outputText = $this->normalizeOutput($output, 80, 6000);
-            if ($outputText !== '') {
-                $allOutput[] = '[' . $key . ']';
-                $allOutput[] = $outputText;
-            }
+            $validSelected[] = $key;
         }
 
-        $this->saveConfig($config);
-        $this->ensureProtectManagerSidebar();
+        if (empty($validSelected)) {
+            return redirect()->route('admin.protect-manager')->with('error', implode("\n", $warnings ?: ['❌ Tidak ada script valid untuk diinstall.']));
+        }
 
-        // Tunda clear cache hingga response selesai agar bulk install tidak 500 di request pertama.
-        $this->queueLaravelCacheClear();
+        $this->dispatchBulkInstallJob($validSelected, $config);
 
         return redirect()->route('admin.protect-manager')
-            ->with('success', implode("\n", $results))
-            ->with('output', trim(implode("\n\n", $allOutput)));
+            ->with('success', trim(implode("\n", array_merge(['⏳ Bulk install dimulai di background. Refresh halaman ini beberapa detik lagi untuk melihat hasilnya.'], $warnings))));
     }
 }
 PHPEOF
