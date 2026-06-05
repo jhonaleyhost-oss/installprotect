@@ -632,56 +632,80 @@ else
 <style>
   .jhonaley-welcome {
     background: #1f1f27;
-    border: 1px solid #2c2c34;
-    border-radius: 3px;
-    padding: 18px 20px;
+    border: 1px solid #2a2a33;
+    border-radius: 4px;
     margin: 20px 24px 0 24px;
+    font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color: #c6c6d0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    overflow: hidden;
+  }
+  .jhonaley-welcome .jw-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #17171d;
+    border-bottom: 1px solid #2a2a33;
+  }
+  .jhonaley-welcome .jw-header .jw-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #0697e2;
+    box-shadow: 0 0 0 3px rgba(6,151,226,0.18);
+  }
+  .jhonaley-welcome .jw-header .jw-title {
+    color: #e6e6ee;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin: 0;
+    flex: 1;
+  }
+  .jhonaley-welcome .jw-header .jw-tag {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #0697e2;
+    border: 1px solid rgba(6,151,226,0.4);
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: rgba(6,151,226,0.08);
+  }
+  .jhonaley-welcome .jw-body {
     display: flex;
     align-items: flex-start;
     gap: 14px;
-    font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    color: #c6c6d0;
-    position: relative;
-    overflow: hidden;
-  }
-  .jhonaley-welcome::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: #0697e2;
+    padding: 16px 18px;
   }
   .jhonaley-welcome .jw-icon {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
-    border-radius: 3px;
-    background: rgba(6,151,226,0.12);
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 4px;
+    background: rgba(6,151,226,0.10);
     color: #0697e2;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-top: 1px;
   }
-  .jhonaley-welcome .jw-icon svg {
-    width: 16px;
-    height: 16px;
-    fill: currentColor;
-  }
+  .jhonaley-welcome .jw-icon svg { width: 18px; height: 18px; fill: currentColor; }
   .jhonaley-welcome .jw-content { flex: 1; min-width: 0; }
   .jhonaley-welcome .jw-content h3 {
     color: #e6e6ee;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     margin: 0 0 4px 0;
     letter-spacing: 0.2px;
-    text-transform: none;
   }
   .jhonaley-welcome .jw-content p {
     color: #9b9bb0;
     font-size: 13px;
     margin: 0;
-    line-height: 1.55;
+    line-height: 1.6;
   }
   .jhonaley-welcome .jw-content a {
     color: #0697e2;
@@ -694,14 +718,16 @@ else
     text-decoration: underline;
   }
   @media (max-width: 640px) {
-    .jhonaley-welcome { margin: 14px 12px 0 12px; padding: 14px 16px; gap: 12px; }
-    .jhonaley-welcome .jw-content h3 { font-size: 13px; }
+    .jhonaley-welcome { margin: 14px 12px 0 12px; }
+    .jhonaley-welcome .jw-body { padding: 14px; gap: 12px; }
+    .jhonaley-welcome .jw-content h3 { font-size: 14px; }
     .jhonaley-welcome .jw-content p { font-size: 12px; }
+    .jhonaley-welcome .jw-header .jw-tag { display: none; }
   }
 </style>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-  var ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 5a1.5 1.5 0 1 1-1.5 1.5A1.5 1.5 0 0 1 12 7zm2 11h-4v-1h1v-5h-1v-1h3v6h1z"/></svg>';
+  var ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 6v6c0 5 3.5 9.3 8 10 4.5-.7 8-5 8-10V6l-8-4zm-1 6h2v5h-2V8zm0 7h2v2h-2v-2z"/></svg>';
   function injectWelcome() {
     if (document.getElementById("jhonaley-welcome-banner")) return;
     var containers = [
@@ -720,7 +746,16 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">' + ICON_SVG + '</div><div class="jw-content"><h3>$WELCOME_TITLE_JS</h3><p>$WELCOME_MESSAGE_JS</p></div>';
+    banner.innerHTML = ''
+      + '<div class="jw-header">'
+      +   '<span class="jw-dot"></span>'
+      +   '<h4 class="jw-title">System Notice</h4>'
+      +   '<span class="jw-tag">Official</span>'
+      + '</div>'
+      + '<div class="jw-body">'
+      +   '<div class="jw-icon">' + ICON_SVG + '</div>'
+      +   '<div class="jw-content"><h3>$WELCOME_TITLE_JS</h3><p>$WELCOME_MESSAGE_JS</p></div>'
+      + '</div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }

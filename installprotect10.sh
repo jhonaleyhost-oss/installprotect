@@ -1,4 +1,5 @@
 #!/bin/bash
+# CONTACT_TELEGRAM_2 default akan dipakai jika env tidak diset oleh Protect Manager
 
 BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
 BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
@@ -121,7 +122,7 @@ cat > "$INDEX_FILE" << 'EOF'
                 <strong>🚫 Manage Existing:</strong> Root Admin only<br>
                 <i class="fa fa-info-circle"></i>
                 Protected by:
-                <span class="label label-primary">Jhonaley Tech</span>
+                <span class="label label-primary">__BRAND_LABEL__</span>
                 <span class="label label-success">@danangvalentp</span>
                 <span class="label label-info">@jhonaleytesti3</span>
             </p>
@@ -158,6 +159,11 @@ cat > "$INDEX_FILE" << 'EOF'
 @endsection
 EOF
 
+CONTACT_TELEGRAM_2="${CONTACT_TELEGRAM_2:-@jhonaleytesti3}"
+BRAND_LABEL="${BRAND_LABEL:-$BRAND_NAME}"
+
+sed -i "s|__BRAND_LABEL__|${BRAND_LABEL}|g" "$INDEX_FILE" 2>/dev/null || true
+sed -i "s|@jhonaleytesti3|${CONTACT_TELEGRAM_2}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|@danagvalentp|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|@danangvalentp|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true

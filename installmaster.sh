@@ -89,6 +89,8 @@ cat > "$CONFIG_FILE" << 'CONFIGEOF'
     "brand_name": "Jhonaley Tech",
     "brand_text": "Protect By Jhonaley",
     "contact_telegram": "@danangvalentp",
+    "contact_telegram_2": "@jhonaleytesti3",
+    "brand_label": "Jhonaley Tech",
     "bot_link": "@upgradeuser_bot",
     "welcome_title": "Welcome To Server Jhonaley Store",
     "welcome_message": "Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.",
@@ -482,7 +484,7 @@ class ProtectManagerController extends Controller
     private function getConfig()
     {
         if (!File::exists($this->configPath)) {
-            return ['protections' => [], 'brand_name' => 'Jhonaley Tech', 'brand_text' => 'Protect By Jhonaley', 'contact_telegram' => '@danangvalentp', 'bot_link' => '@upgradeuser_bot'];
+            return ['protections' => [], 'brand_name' => 'Jhonaley Tech', 'brand_text' => 'Protect By Jhonaley', 'contact_telegram' => '@danangvalentp', 'contact_telegram_2' => '@jhonaleytesti3', 'brand_label' => 'Jhonaley Tech', 'bot_link' => '@upgradeuser_bot'];
         }
         return json_decode(File::get($this->configPath), true);
     }
@@ -683,6 +685,8 @@ SCRIPT_INSTALLPROTECT13_SH,
             . 'export BRAND_NAME=' . escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech') . "\n"
             . 'export BRAND_TEXT=' . escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley') . "\n"
             . 'export CONTACT_TELEGRAM=' . escapeshellarg($config['contact_telegram'] ?? '@danangvalentp') . "\n"
+            . 'export CONTACT_TELEGRAM_2=' . escapeshellarg($config['contact_telegram_2'] ?? '@jhonaleytesti3') . "\n"
+            . 'export BRAND_LABEL=' . escapeshellarg($config['brand_label'] ?? ($config['brand_name'] ?? 'Jhonaley Tech')) . "\n"
             . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
             . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
             . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
@@ -775,6 +779,8 @@ $runProtectedScript = function (string $scriptFile, array $config) use ($scripts
         . 'export BRAND_NAME=' . escapeshellarg($config['brand_name'] ?? 'Jhonaley Tech') . "\n"
         . 'export BRAND_TEXT=' . escapeshellarg($config['brand_text'] ?? 'Protect By Jhonaley') . "\n"
         . 'export CONTACT_TELEGRAM=' . escapeshellarg($config['contact_telegram'] ?? '@danangvalentp') . "\n"
+        . 'export CONTACT_TELEGRAM_2=' . escapeshellarg($config['contact_telegram_2'] ?? '@jhonaleytesti3') . "\n"
+        . 'export BRAND_LABEL=' . escapeshellarg($config['brand_label'] ?? ($config['brand_name'] ?? 'Jhonaley Tech')) . "\n"
         . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
         . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
         . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
@@ -1106,9 +1112,66 @@ PHPJOB;
             return redirect()->route('admin.protect-manager')->with('error', 'Proteksi tidak ditemukan.');
         }
 
+        $res = $this->restoreProtection($key, $config);
+        $this->saveConfig($config);
+
+        try { $this->ensureProtectManagerSidebar(); } catch (\Exception $e) {}
+        $this->fixLayoutPermissions();
+        $this->queueLaravelCacheClear();
+
+        if ($res['restored'] === 0 && !empty($res['errors'])) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore: ' . implode(', ', $res['errors']));
+        }
+
+        return redirect()->route('admin.protect-manager')->with('success', "✅ {$res['name']} berhasil di-uninstall! ({$res['restored']} file di-restore)");
+    }
+
+    /**
+     * Bulk uninstall: restore beberapa proteksi sekaligus dari backup.
+     */
+    public function bulkUninstall(Request $request)
+    {
+        $this->authorizeAccess();
+        $selected = $request->input('selected_protections', []);
+        $config = $this->getConfig();
+
+        if (empty($selected)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada proteksi yang dipilih untuk di-uninstall.');
+        }
+
+        $results = [];
+        foreach ($selected as $key) {
+            if (!isset($config['protections'][$key])) continue;
+            if (empty($config['protections'][$key]['enabled'])) continue;
+
+            $res = $this->restoreProtection($key, $config);
+            if ($res['restored'] > 0) {
+                $results[] = "✅ {$res['name']}: {$res['restored']} file di-restore";
+            } elseif (!empty($res['errors'])) {
+                $results[] = "❌ {$res['name']}: " . implode(', ', $res['errors']);
+            } else {
+                $results[] = "⚠️ {$res['name']}: tidak ada backup ditemukan";
+            }
+        }
+
+        $this->saveConfig($config);
+        try { $this->ensureProtectManagerSidebar(); } catch (\Exception $e) {}
+        $this->fixLayoutPermissions();
+        $this->queueLaravelCacheClear();
+
+        if (empty($results)) {
+            return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada proteksi terinstall yang dipilih.');
+        }
+
+        return redirect()->route('admin.protect-manager')->with('success', "🗑️ Bulk Uninstall selesai:\n" . implode("\n", $results));
+    }
+
+    /**
+     * Restore satu proteksi dari backup. Mengembalikan ['restored','errors','name']
+     */
+    private function restoreProtection(string $key, array &$config): array
+    {
         $prot = $config['protections'][$key];
-        
-        // Kumpulkan semua file yang perlu di-restore
         $filesToRestore = [$prot['target_file']];
         if (!empty($prot['extra_files'])) {
             $filesToRestore = array_merge($filesToRestore, $prot['extra_files']);
@@ -1116,54 +1179,36 @@ PHPJOB;
 
         $restoredCount = 0;
         $errors = [];
+        $markers = ['PROTEKSI_JHONALEY', 'BRANDING_JHONALEY', 'WELCOME_JHONALEY', 'PROTEKSI_NESTS_SIDEBAR'];
 
         foreach ($filesToRestore as $relPath) {
             $targetFile = $this->panelDir . '/' . $relPath;
             $dir = dirname($targetFile);
             $basename = basename($targetFile);
             $backups = glob($dir . '/' . $basename . '.bak_*');
+            if (empty($backups)) continue;
 
-            if (empty($backups)) {
-                continue;
-            }
-
-            // Cari backup bersih (tanpa marker proteksi)
             sort($backups);
             $cleanBackup = null;
-            $markers = ['PROTEKSI_JHONALEY', 'BRANDING_JHONALEY', 'WELCOME_JHONALEY', 'PROTEKSI_NESTS_SIDEBAR'];
-            
             foreach ($backups as $bak) {
                 if (!File::exists($bak)) continue;
                 $bakContent = File::get($bak);
                 $isClean = true;
                 foreach ($markers as $m) {
-                    if (strpos($bakContent, $m) !== false) {
-                        $isClean = false;
-                        break;
-                    }
+                    if (strpos($bakContent, $m) !== false) { $isClean = false; break; }
                 }
-                if ($isClean) {
-                    $cleanBackup = $bak;
-                    break;
-                }
+                if ($isClean) { $cleanBackup = $bak; break; }
             }
-
-            // Fallback ke backup terlama jika tidak ada yang bersih
-            if (!$cleanBackup) {
-                $cleanBackup = $backups[0];
-            }
+            if (!$cleanBackup) $cleanBackup = $backups[0];
 
             try {
-                // Gunakan sudo cp via exec untuk menghindari permission denied
                 $cmd = sprintf('sudo cp %s %s 2>&1', escapeshellarg($cleanBackup), escapeshellarg($targetFile));
                 exec($cmd, $cpOutput, $cpReturn);
                 if ($cpReturn === 0) {
-                    // Fix ownership setelah restore
                     exec(sprintf('sudo chown www-data:www-data %s 2>&1', escapeshellarg($targetFile)));
                     exec(sprintf('sudo chmod 664 %s 2>&1', escapeshellarg($targetFile)));
                     $restoredCount++;
                 } else {
-                    // Fallback ke PHP copy
                     File::copy($cleanBackup, $targetFile);
                     $restoredCount++;
                 }
@@ -1173,16 +1218,15 @@ PHPJOB;
         }
 
         $config['protections'][$key]['enabled'] = false;
-        $this->saveConfig($config);
 
-        // Re-inject sidebar Protect Manager via sudo wrapper
-        try {
-            $this->ensureProtectManagerSidebar();
-        } catch (\Exception $e) {
-            // Jika gagal via PHP, coba via sudo sed
-        }
+        return ['restored' => $restoredCount, 'errors' => $errors, 'name' => $prot['name'] ?? $key];
+    }
 
-        // Fix permissions pada layout files setelah restore
+    /**
+     * Fix permissions pada layout files setelah restore.
+     */
+    private function fixLayoutPermissions(): void
+    {
         $layoutFiles = [
             $this->panelDir . '/resources/views/layouts/admin.blade.php',
             $this->panelDir . '/resources/views/layouts/app.blade.php',
@@ -1194,15 +1238,6 @@ PHPJOB;
                 exec(sprintf('sudo chmod 664 %s 2>&1', escapeshellarg($lf)));
             }
         }
-
-        // Tunda clear cache hingga response selesai agar route kembali stabil.
-        $this->queueLaravelCacheClear();
-
-        if ($restoredCount === 0 && !empty($errors)) {
-            return redirect()->route('admin.protect-manager')->with('error', '❌ Gagal restore: ' . implode(', ', $errors));
-        }
-
-        return redirect()->route('admin.protect-manager')->with('success', "✅ {$prot['name']} berhasil di-uninstall! ({$restoredCount} file di-restore)");
     }
 
     /**
@@ -1221,6 +1256,8 @@ PHPJOB;
         $config['brand_name'] = $request->input('brand_name', $config['brand_name']);
         $config['brand_text'] = $request->input('brand_text', $config['brand_text']);
         $config['contact_telegram'] = $request->input('contact_telegram', $config['contact_telegram']);
+        $config['contact_telegram_2'] = $request->input('contact_telegram_2', $config['contact_telegram_2'] ?? '@jhonaleytesti3');
+        $config['brand_label'] = $request->input('brand_label', $config['brand_label'] ?? ($config['brand_name'] ?? 'Jhonaley Tech'));
         $config['bot_link'] = $request->input('bot_link', $config['bot_link']);
         $config['welcome_title'] = $request->input('welcome_title', $config['welcome_title'] ?? '');
         $config['welcome_message'] = $request->input('welcome_message', $config['welcome_message'] ?? '');
@@ -1525,6 +1562,23 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
         color: white;
         transform: translateY(-1px);
     }
+    .btn-bulk-uninstall {
+        background: linear-gradient(135deg, #dc2626, #ef4444);
+        color: white;
+        border: none;
+        padding: 10px 28px;
+        border-radius: 8px;
+        font-size: 14px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+        margin-left: 8px;
+    }
+    .btn-bulk-uninstall:hover {
+        background: linear-gradient(135deg, #b91c1c, #dc2626);
+        color: white;
+        transform: translateY(-1px);
+    }
     .config-section {
         background: linear-gradient(135deg, #0c1929 0%, #132f4c 100%);
         border: 1px solid #1e3a5f;
@@ -1681,14 +1735,24 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
     <form id="bulkInstallForm" action="{{ route('admin.protect-manager.bulk-install') }}" method="POST">
         @csrf
     </form>
+    <form id="bulkUninstallForm" action="{{ route('admin.protect-manager.bulk-uninstall') }}" method="POST" onsubmit="return confirm('🗑️ Uninstall semua proteksi yang dicentang? File akan direstore dari backup.');">
+        @csrf
+    </form>
 
-    {{-- Select All --}}
-    <div class="select-all-box">
+    {{-- Select All + Bulk Actions --}}
+    <div class="select-all-box" style="flex-wrap:wrap; gap:8px;">
         <label>
             <input type="checkbox" class="custom-check" id="selectAll" onclick="toggleAll(this)" style="margin-right: 10px;">
             Pilih Semua (yang belum terinstall)
         </label>
-        <button type="submit" form="bulkInstallForm" class="btn-bulk">🚀 Terapkan yang Dicentang</button>
+        <label style="margin-left:14px;">
+            <input type="checkbox" class="custom-check" id="selectAllUninstall" onclick="toggleAllUninstall(this)" style="margin-right: 10px;">
+            Pilih Semua (yang terinstall)
+        </label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="submit" form="bulkInstallForm" class="btn-bulk">🚀 Terapkan yang Dicentang</button>
+            <button type="submit" form="bulkUninstallForm" class="btn-bulk-uninstall">🗑️ Uninstall yang Dicentang</button>
+        </div>
     </div>
 
     {{-- Protection Cards --}}
@@ -1701,7 +1765,7 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
                         @if(!$prot['installed'])
                         <input type="checkbox" name="selected_protections[]" value="{{ $key }}" form="bulkInstallForm" class="custom-check protect-check" style="margin-right: 12px; margin-top: 3px;">
                         @else
-                        <span style="margin-right: 12px; font-size: 18px;">✅</span>
+                        <input type="checkbox" name="selected_protections[]" value="{{ $key }}" form="bulkUninstallForm" class="custom-check protect-uninstall-check" style="margin-right: 12px; margin-top: 3px; accent-color:#ef4444;">
                         @endif
                         <div style="flex: 1;">
                             <div class="protect-title">{{ $prot['name'] }}</div>
@@ -1785,18 +1849,31 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
         {{-- 2. Kontak --}}
         <div class="config-section">
             <h3>💬 Kontak & Bot</h3>
-            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Akan muncul di footer panel dan welcome banner client dashboard. Awali dengan <code>@</code>.</p>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Akan muncul di footer panel, banner "Protected by", dan welcome banner. Awali dengan <code>@</code>.</p>
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <div class="form-group">
                         <label class="config-label">Username Telegram Admin</label>
                         <input type="text" name="contact_telegram" value="{{ $config['contact_telegram'] ?? '@danangvalentp' }}" class="config-input" placeholder="@usernameanda">
                     </div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label class="config-label">Username Telegram Admin 2 (Protected by)</label>
+                        <input type="text" name="contact_telegram_2" value="{{ $config['contact_telegram_2'] ?? '@jhonaleytesti3' }}" class="config-input" placeholder="@adminkedua">
+                    </div>
+                </div>
+                <div class="col-md-4">
                     <div class="form-group">
                         <label class="config-label">Username Bot Telegram</label>
                         <input type="text" name="bot_link" value="{{ $config['bot_link'] ?? '@upgradeuser_bot' }}" class="config-input" placeholder="@botanda">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Label Brand (Protected by)</label>
+                        <input type="text" name="brand_label" value="{{ $config['brand_label'] ?? ($config['brand_name'] ?? 'Jhonaley Tech') }}" class="config-input" placeholder="Nama brand untuk tag Protected by">
+                        <small style="color:#64748b;font-size:11px;">Teks pada label biru di banner "Protected by" halaman daftar server. Bisa beda dengan Nama Brand utama.</small>
                     </div>
                 </div>
             </div>
@@ -1897,6 +1974,11 @@ function toggleAll(checkbox) {
         cb.checked = checkbox.checked;
     });
 }
+function toggleAllUninstall(checkbox) {
+    document.querySelectorAll('.protect-uninstall-check').forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+}
 </script>
 @endsection
 VIEWEOF
@@ -1938,6 +2020,7 @@ Route::group(['prefix' => 'protect-manager'], function () {
     Route::post('/update-config', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'updateConfig'])->name('admin.protect-manager.update-config');
     
     Route::post('/bulk-install', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'bulkInstall'])->name('admin.protect-manager.bulk-install');
+    Route::post('/bulk-uninstall', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'bulkUninstall'])->name('admin.protect-manager.bulk-uninstall');
 });
 ROUTEEOF
         echo "✅ Route ditambahkan"

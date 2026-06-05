@@ -2,7 +2,9 @@
 
 BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
 BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
+BRAND_LABEL="${BRAND_LABEL:-$BRAND_NAME}"
 CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
+CONTACT_TELEGRAM_2="${CONTACT_TELEGRAM_2:-@jhonaleytesti3}"
 
 REMOTE_PATH="/var/www/pterodactyl/app/Http/Controllers/Admin/UserController.php"
 TIMESTAMP=$(date -u +"%Y-%m-%d-%H-%M-%S")
@@ -225,3 +227,92 @@ sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$REMOTE_PATH" 2>/dev/null || true
 echo "✅ Proteksi UserController.php berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"
 echo "🗂️ Backup file lama: $BACKUP_PATH"
+
+# ============================================================================
+# BAGIAN 2: Inject banner "User Disembunyikan - Protected By" ke users index
+# ============================================================================
+USERS_INDEX_BLADE="/var/www/pterodactyl/resources/views/admin/users/index.blade.php"
+
+if [ -f "$USERS_INDEX_BLADE" ]; then
+    echo ""
+    echo "🎨 Memasang banner 'User Disembunyikan' di halaman Users..."
+
+    BLADE_BACKUP="${USERS_INDEX_BLADE}.bak_${TIMESTAMP}"
+    cp "$USERS_INDEX_BLADE" "$BLADE_BACKUP"
+    echo "📦 Backup blade: $BLADE_BACKUP"
+
+    export BRAND_LABEL CONTACT_TELEGRAM CONTACT_TELEGRAM_2 USERS_INDEX_BLADE
+
+    python3 <<'PYEOF'
+import os, re
+
+path = os.environ['USERS_INDEX_BLADE']
+brand_label = os.environ.get('BRAND_LABEL', 'Jhonaley Tech')
+tg1 = os.environ.get('CONTACT_TELEGRAM', '@danangvalentp')
+tg2 = os.environ.get('CONTACT_TELEGRAM_2', '@jhonaleytesti3')
+
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+MARKER = 'PROTEKSI_JHONALEY_USER_BANNER'
+
+# Remove previous banner block (between markers) so we can re-inject fresh
+content = re.sub(
+    r'\{\{--\s*' + MARKER + r'_START.*?' + MARKER + r'_END\s*--\}\}\s*',
+    '',
+    content,
+    flags=re.DOTALL,
+)
+
+banner = (
+    '{{-- ' + MARKER + '_START --}}\n'
+    '@if((int) auth()->user()->id !== 1)\n'
+    '<div class="alert" style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); '
+    'color: #fff; border: none; border-radius: 6px; padding: 15px 20px; margin-bottom: 15px; '
+    'box-shadow: 0 4px 12px rgba(0,0,0,0.25);">\n'
+    '    <h4 style="margin: 0 0 6px 0; color: #fff;">\n'
+    '        <i class="fa fa-user-secret"></i> User Disembunyikan\n'
+    '    </h4>\n'
+    '    <p style="margin: 0; font-size: 13px; color: #e0e7ff;">\n'
+    '        Daftar user disembunyikan untuk admin selain Root Administrator (ID 1).<br>\n'
+    '        <i class="fa fa-shield"></i> Protected by:\n'
+    '        <span class="label label-primary">__BRAND_LABEL__</span>\n'
+    '        <span class="label label-success">__CONTACT_TG1__</span>\n'
+    '        <span class="label label-info">__CONTACT_TG2__</span>\n'
+    '    </p>\n'
+    '</div>\n'
+    '@endif\n'
+    '{{-- ' + MARKER + '_END --}}\n'
+)
+
+# Inject right after the first @section('content') opening line
+pattern = re.compile(r"(@section\(\s*['\"]content['\"]\s*\)\s*\n)")
+m = pattern.search(content)
+if m:
+    insert_at = m.end()
+    new_content = content[:insert_at] + banner + content[insert_at:]
+else:
+    # Fallback: prepend
+    new_content = banner + content
+
+# Substitute placeholders
+new_content = (new_content
+    .replace('__BRAND_LABEL__', brand_label)
+    .replace('__CONTACT_TG1__', tg1)
+    .replace('__CONTACT_TG2__', tg2))
+
+# Atomic write
+tmp = path + '.tmp_jhonaley'
+with open(tmp, 'w', encoding='utf-8') as f:
+    f.write(new_content)
+os.replace(tmp, path)
+print("✅ Banner injected into:", path)
+PYEOF
+
+    chown www-data:www-data "$USERS_INDEX_BLADE" 2>/dev/null || true
+    chmod 644 "$USERS_INDEX_BLADE"
+    echo "✅ Banner 'User Disembunyikan' terpasang."
+else
+    echo "⚠️ Blade file tidak ditemukan: $USERS_INDEX_BLADE (skip banner)"
+fi
+

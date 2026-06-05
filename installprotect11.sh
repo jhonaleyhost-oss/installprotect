@@ -3,6 +3,8 @@
 BRAND_NAME="${BRAND_NAME:-Jhonaley Tech}"
 BRAND_TEXT="${BRAND_TEXT:-Protect By Jhonaley}"
 CONTACT_TELEGRAM="${CONTACT_TELEGRAM:-@danangvalentp}"
+CONTACT_TELEGRAM_2="${CONTACT_TELEGRAM_2:-@jhonaleytesti3}"
+BRAND_LABEL="${BRAND_LABEL:-$BRAND_NAME}"
 
 echo "🚀 Memasang proteksi Anti Tautan Server..."
 
@@ -123,7 +125,7 @@ cat > "$INDEX_FILE" << 'EOF'
                 Protected by:
                 <span class="label label-primary">@danangvalentp</span>
                 <span class="label label-success">@jhonaleytesti3</span>
-                <span class="label label-info">Jhonaley Tech</span>
+                <span class="label label-info">__BRAND_LABEL__</span>
             </p>
         </div>
         @else
@@ -158,6 +160,8 @@ cat > "$INDEX_FILE" << 'EOF'
 @endsection
 EOF
 
+sed -i "s|__BRAND_LABEL__|${BRAND_LABEL}|g" "$INDEX_FILE" 2>/dev/null || true
+sed -i "s|@jhonaleytesti3|${CONTACT_TELEGRAM_2}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|Jhonaley Tech|${BRAND_NAME}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|@danangvalentp|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true
 sed -i "s|@danangvalentpl|${CONTACT_TELEGRAM}|g" "$INDEX_FILE" 2>/dev/null || true
