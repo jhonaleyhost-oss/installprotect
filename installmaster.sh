@@ -896,6 +896,12 @@ PHPJOB;
      */
     private function checkInstalled($protectionKey, $protection)
     {
+        // Hormati flag enabled di config — jika sudah di-uninstall via panel,
+        // anggap tidak terinstall meskipun masih ada sisa marker di file lain.
+        if (array_key_exists('enabled', $protection) && $protection['enabled'] === false) {
+            return false;
+        }
+
         $containsAny = function (string $relativePath, array $needles): bool {
             $fullPath = $this->panelDir . '/' . ltrim($relativePath, '/');
             if (!File::exists($fullPath)) {

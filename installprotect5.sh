@@ -625,6 +625,10 @@ else
 
   cp "$WELCOME_TARGET" "${WELCOME_TARGET}.bak_${TIMESTAMP}" 2>/dev/null || true
   remove_block_by_markers "$WELCOME_TARGET" "<!-- WELCOME_JHONALEY: Welcome Banner -->" "<!-- /WELCOME_JHONALEY -->"
+  # Bersihkan juga marker legacy dari versi sebelumnya
+  remove_block_by_markers "$WELCOME_TARGET" "<!-- JHONALEY_WELCOME_START -->" "<!-- JHONALEY_WELCOME_END -->"
+  remove_block_by_markers "$WELCOME_TARGET" "<!-- JHONALEY_WELCOME: Welcome Banner -->" "<!-- /JHONALEY_WELCOME -->"
+  remove_block_by_markers "$WELCOME_TARGET" "<!-- WELCOME_JHONALEY_START -->" "<!-- WELCOME_JHONALEY_END -->"
 
   WELCOME_TEMP=$(mktemp)
   cat > "$WELCOME_TEMP" << WELCOME_EOF
@@ -842,9 +846,15 @@ SIDEBAR_PM_EOF
 fi
 
 # ===================================================================
-# CLEAR CACHE - di-handle oleh controller
+# CLEAR CACHE - paksa clear di sini agar welcome banner langsung tampil
 # ===================================================================
-echo "ℹ️ Cache clear akan dilakukan oleh Protect Manager controller"
+if [ -d /var/www/pterodactyl ]; then
+  cd /var/www/pterodactyl
+  php artisan view:clear 2>/dev/null || true
+  php artisan cache:clear 2>/dev/null || true
+  rm -rf /var/www/pterodactyl/storage/framework/views/*.php 2>/dev/null || true
+  echo "✅ View & compiled blade cache dibersihkan"
+fi
 
 echo ""
 echo "==========================================="
