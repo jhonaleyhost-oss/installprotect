@@ -54,20 +54,37 @@ class FileController extends ClientApiController
 
     /**
      * 🔒 Fungsi tambahan: Cegah akses server orang lain.
+     * Izinkan: Admin ID 1, Owner server, dan Subuser yang terdaftar.
      */
     private function checkServerAccess($request, Server $server)
     {
         $user = $request->user();
+
+        if (!$user) {
+            abort(403, 'Anda tidak memiliki akses ke server ini.');
+        }
 
         // Admin (user id = 1) bebas akses semua
         if ((int) $user->id === 1) {
             return;
         }
 
-        // Jika server bukan milik user, tolak akses
-        if ((int) $server->owner_id !== (int) $user->id) {
-            abort(403, 'Anda tidak memiliki akses ke server ini.');
+        // Owner server
+        if ((int) $server->owner_id === (int) $user->id) {
+            return;
         }
+
+        // Subuser yang terdaftar di server ini (Pterodactyl 1.12.x)
+        try {
+            $isSubuser = $server->subusers()->where('user_id', $user->id)->exists();
+            if ($isSubuser) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            // fallback diam
+        }
+
+        abort(403, 'Anda tidak memiliki akses ke server ini.');
     }
 
     public function directory(ListFilesRequest $request, Server $server): array
@@ -276,3 +293,22 @@ echo "✅ Proteksi Anti Akses Server File Controller berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"
 echo "🗂️ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
 echo "🔒 Hanya Admin (ID 1) yang bisa Akses Server File Controller."
+
+# === KUSTOMISASI PESAN AKSES DITOLAK (dari Protect Manager) ===
+if [ -n "$DENY_MSG_FILE" ] && [ -f "$REMOTE_PATH" ]; then
+  python3 - "$REMOTE_PATH" "$DENY_MSG_FILE" << 'PYABORT'
+import sys, re
+path, msg = sys.argv[1], sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+new_content = re.sub(
+    r"abort\(\s*403\s*,\s*(['\"])(?:\\\1|(?!\1).)*\1\s*\)",
+    "abort(403, " + repr(msg) + ")",
+    content
+)
+if new_content != content:
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print("✏️  Pesan akses file dikustomisasi: " + msg)
+PYABORT
+fi

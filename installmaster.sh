@@ -686,6 +686,11 @@ SCRIPT_INSTALLPROTECT13_SH,
             . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
             . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
             . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
+            . 'export PANEL_TITLE=' . escapeshellarg($config['panel_title'] ?? ($config['brand_name'] ?? 'Jhonaley Tech')) . "\n"
+            . 'export DENY_MSG_ADMIN=' . escapeshellarg($config['deny_msg_admin'] ?? '') . "\n"
+            . 'export DENY_MSG_SERVER=' . escapeshellarg($config['deny_msg_server'] ?? '') . "\n"
+            . 'export DENY_MSG_FILE=' . escapeshellarg($config['deny_msg_file'] ?? '') . "\n"
+            . 'export DENY_MSG_MODIFY=' . escapeshellarg($config['deny_msg_modify'] ?? '') . "\n"
             . 'exec /bin/bash ' . escapeshellarg($scriptFile) . "\n";
 
         File::put($wrapperFile, $wrapperContent);
@@ -773,6 +778,11 @@ $runProtectedScript = function (string $scriptFile, array $config) use ($scripts
         . 'export BOT_LINK=' . escapeshellarg($config['bot_link'] ?? '@upgradeuser_bot') . "\n"
         . 'export WELCOME_TITLE=' . escapeshellarg($config['welcome_title'] ?? 'Welcome To Server Jhonaley Store') . "\n"
         . 'export WELCOME_MESSAGE=' . escapeshellarg($config['welcome_message'] ?? '') . "\n"
+        . 'export PANEL_TITLE=' . escapeshellarg($config['panel_title'] ?? ($config['brand_name'] ?? 'Jhonaley Tech')) . "\n"
+        . 'export DENY_MSG_ADMIN=' . escapeshellarg($config['deny_msg_admin'] ?? '') . "\n"
+        . 'export DENY_MSG_SERVER=' . escapeshellarg($config['deny_msg_server'] ?? '') . "\n"
+        . 'export DENY_MSG_FILE=' . escapeshellarg($config['deny_msg_file'] ?? '') . "\n"
+        . 'export DENY_MSG_MODIFY=' . escapeshellarg($config['deny_msg_modify'] ?? '') . "\n"
         . 'exec /bin/bash ' . escapeshellarg($scriptFile) . "\n";
 
     file_put_contents($wrapperFile, $wrapperContent);
@@ -1214,6 +1224,11 @@ PHPJOB;
         $config['bot_link'] = $request->input('bot_link', $config['bot_link']);
         $config['welcome_title'] = $request->input('welcome_title', $config['welcome_title'] ?? '');
         $config['welcome_message'] = $request->input('welcome_message', $config['welcome_message'] ?? '');
+        $config['panel_title'] = $request->input('panel_title', $config['panel_title'] ?? '');
+        $config['deny_msg_admin'] = $request->input('deny_msg_admin', $config['deny_msg_admin'] ?? '');
+        $config['deny_msg_server'] = $request->input('deny_msg_server', $config['deny_msg_server'] ?? '');
+        $config['deny_msg_file'] = $request->input('deny_msg_file', $config['deny_msg_file'] ?? '');
+        $config['deny_msg_modify'] = $request->input('deny_msg_modify', $config['deny_msg_modify'] ?? '');
 
         // Update nama dan deskripsi proteksi jika dikirim
         if ($request->has('protection_names')) {
@@ -1271,25 +1286,9 @@ PHPJOB;
         return $redirect;
     }
 
-    /**
-     * Upload script proteksi
-     */
-    public function uploadScript(Request $request)
-    {
-        $this->authorizeAccess();
+    // (uploadScript dihapus — script proteksi diunduh otomatis dari GitHub jika belum ada)
 
-        if ($request->hasFile('script_file')) {
-            $file = $request->file('script_file');
-            $filename = $file->getClientOriginalName();
-            $this->ensureDirectory($this->scriptsDir);
-            $file->move($this->scriptsDir, $filename);
-            chmod($this->scriptsDir . '/' . $filename, 0755);
 
-            return redirect()->route('admin.protect-manager')->with('success', "✅ Script '{$filename}' berhasil diupload!");
-        }
-
-        return redirect()->route('admin.protect-manager')->with('error', '❌ Tidak ada file yang diupload.');
-    }
 
     /**
      * Install semua proteksi yang dicentang
@@ -1675,7 +1674,6 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
 <div style="margin-bottom: 20px;">
     <button class="tab-btn active" onclick="showTab('protections', this)">🔒 Proteksi</button>
     <button class="tab-btn" onclick="showTab('config', this)">⚙️ Konfigurasi</button>
-    <button class="tab-btn" onclick="showTab('upload', this)">📤 Upload Script</button>
 </div>
 
 {{-- TAB: Proteksi --}}
@@ -1757,60 +1755,109 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
     <form action="{{ route('admin.protect-manager.update-config') }}" method="POST">
         @csrf
         <fieldset @if($protect5Active) disabled @endif style="border:none;padding:0;margin:0;">
-        
-        {{-- Brand Settings --}}
+
+        {{-- 1. Brand Identity --}}
         <div class="config-section">
-            <h3>🏷️ Pengaturan Brand</h3>
+            <h3>🏷️ Identitas Brand</h3>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Nama dan label yang muncul di footer panel, judul tab browser, dan badge proteksi.</p>
             <div class="row">
                 <div class="col-md-6">
                     <div class="form-group">
-                        <label class="config-label">Nama Brand</label>
-                        <input type="text" name="brand_name" value="{{ $config['brand_name'] ?? 'Jhonaley Tech' }}" class="config-input">
+                        <label class="config-label">Nama Brand <span style="color:#64748b;font-weight:400;">(footer, title)</span></label>
+                        <input type="text" name="brand_name" value="{{ $config['brand_name'] ?? 'Jhonaley Tech' }}" class="config-input" placeholder="Jhonaley Tech">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="form-group">
-                        <label class="config-label">Teks Proteksi</label>
-                        <input type="text" name="brand_text" value="{{ $config['brand_text'] ?? 'Protect By Jhonaley' }}" class="config-input">
+                        <label class="config-label">Teks Proteksi <span style="color:#64748b;font-weight:400;">(badge & pesan abort)</span></label>
+                        <input type="text" name="brand_text" value="{{ $config['brand_text'] ?? 'Protect By Jhonaley' }}" class="config-input" placeholder="Protect By Jhonaley">
                     </div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-12">
                     <div class="form-group">
-                        <label class="config-label">Kontak Telegram</label>
-                        <input type="text" name="contact_telegram" value="{{ $config['contact_telegram'] ?? '@danangvalentp' }}" class="config-input">
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <div class="form-group">
-                        <label class="config-label">Link Bot</label>
-                        <input type="text" name="bot_link" value="{{ $config['bot_link'] ?? '@upgradeuser_bot' }}" class="config-input">
+                        <label class="config-label">Judul Panel <span style="color:#64748b;font-weight:400;">(tag &lt;title&gt; browser)</span></label>
+                        <input type="text" name="panel_title" value="{{ $config['panel_title'] ?? ($config['brand_name'] ?? 'Jhonaley Tech') }}" class="config-input" placeholder="Pterodactyl - Brand Anda">
                     </div>
                 </div>
             </div>
         </div>
 
-        {{-- Welcome Banner Settings --}}
+        {{-- 2. Kontak --}}
         <div class="config-section">
-            <h3>📋 Pengaturan Welcome Banner</h3>
+            <h3>💬 Kontak & Bot</h3>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Akan muncul di footer panel dan welcome banner client dashboard. Awali dengan <code>@</code>.</p>
             <div class="row">
-                <div class="col-md-12">
+                <div class="col-md-6">
                     <div class="form-group">
-                        <label class="config-label">Judul Welcome Banner</label>
-                        <input type="text" name="welcome_title" value="{{ $config['welcome_title'] ?? 'Welcome To Server Jhonaley Store' }}" class="config-input" placeholder="Welcome To Server Jhonaley Store">
+                        <label class="config-label">Username Telegram Admin</label>
+                        <input type="text" name="contact_telegram" value="{{ $config['contact_telegram'] ?? '@danangvalentp' }}" class="config-input" placeholder="@usernameanda">
                     </div>
                 </div>
-                <div class="col-md-12">
+                <div class="col-md-6">
                     <div class="form-group">
-                        <label class="config-label">Pesan Welcome Banner</label>
-                        <textarea name="welcome_message" class="config-input" rows="3" placeholder="Teks welcome banner...">{{ $config['welcome_message'] ?? 'Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.' }}</textarea>
+                        <label class="config-label">Username Bot Telegram</label>
+                        <input type="text" name="bot_link" value="{{ $config['bot_link'] ?? '@upgradeuser_bot' }}" class="config-input" placeholder="@botanda">
                     </div>
                 </div>
             </div>
         </div>
 
-        {{-- Protection Names Edit --}}
+        {{-- 3. Welcome Banner --}}
         <div class="config-section">
-            <h3>✏️ Edit Nama & Deskripsi Proteksi</h3>
+            <h3>📋 Welcome Banner (Client Dashboard)</h3>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Banner info yang tampil di halaman daftar server client. Gunakan @username untuk mention Telegram.</p>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Judul Banner</label>
+                        <input type="text" name="welcome_title" value="{{ $config['welcome_title'] ?? 'Welcome To Server Jhonaley Store' }}" class="config-input" placeholder="Welcome To Server ...">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Pesan Banner</label>
+                        <textarea name="welcome_message" class="config-input" rows="3" placeholder="Pesan welcome untuk client...">{{ $config['welcome_message'] ?? 'Butuh panel legal yang anti mokad? langsung aja ke @upgradeuser_bot. Jika ada kendala dan ada yang ingin di tanyakan hubungi @danangvalentp.' }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- 4. Pesan Akses Ditolak (KUSTOM) --}}
+        <div class="config-section">
+            <h3>🚫 Pesan Akses Ditolak</h3>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Override pesan default yang muncul ketika user mencoba akses fitur terproteksi. Kosongkan untuk pakai default.</p>
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Menu Admin <span style="color:#64748b;font-weight:400;">(Nests / Settings / Nodes / Locations)</span></label>
+                        <input type="text" name="deny_msg_admin" value="{{ $config['deny_msg_admin'] ?? '' }}" class="config-input" placeholder="Akses ditolak — hanya admin utama yang dapat membuka menu ini.">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Akses Server <span style="color:#64748b;font-weight:400;">(intip server orang lain)</span></label>
+                        <input type="text" name="deny_msg_server" value="{{ $config['deny_msg_server'] ?? '' }}" class="config-input" placeholder="Akses ditolak. Anda hanya bisa melihat server milik sendiri.">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Akses File Server <span style="color:#64748b;font-weight:400;">(download / browse file)</span></label>
+                        <input type="text" name="deny_msg_file" value="{{ $config['deny_msg_file'] ?? '' }}" class="config-input" placeholder="Anda tidak memiliki akses ke file server ini.">
+                    </div>
+                </div>
+                <div class="col-md-12">
+                    <div class="form-group">
+                        <label class="config-label">Modifikasi Server <span style="color:#64748b;font-weight:400;">(ubah owner / detail)</span></label>
+                        <input type="text" name="deny_msg_modify" value="{{ $config['deny_msg_modify'] ?? '' }}" class="config-input" placeholder="Hanya admin utama yang bisa mengubah detail server.">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- 5. Edit Nama Proteksi --}}
+        <div class="config-section">
+            <h3>✏️ Nama & Deskripsi Proteksi</h3>
+            <p style="color:#64748b;font-size:12px;margin:-12px 0 18px 0;">Ubah label proteksi yang tampil di tab "Proteksi". Tidak mengubah perilaku script.</p>
             @foreach($protections as $key => $prot)
             <div style="padding: 12px 0; border-bottom: 1px solid #1e3a5f;">
                 <div class="row">
@@ -1835,57 +1882,12 @@ cat > "$VIEW_PATH" << 'VIEWEOF'
     </form>
 </div>
 
-{{-- TAB: Upload Script --}}
-<div id="tab-upload" style="display: none;">
-    <div class="config-section">
-        <h3>📤 Upload Script Proteksi</h3>
-        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px;">
-            Upload file .sh script proteksi ke server. Nama file harus sesuai format: <code style="color: #93c5fd;">installprotectX.sh</code>
-        </p>
-        <form action="{{ route('admin.protect-manager.upload-script') }}" method="POST" enctype="multipart/form-data">
-            @csrf
-            <div class="form-group">
-                <input type="file" name="script_file" accept=".sh" class="config-input" style="padding: 10px;">
-            </div>
-            <button type="submit" class="btn-install" style="margin-top: 10px;">📤 Upload Script</button>
-        </form>
-
-        <div style="margin-top: 25px;">
-            <h4 style="color: #93c5fd; font-size: 15px;">📂 Script yang Tersedia</h4>
-            <div style="margin-top: 10px;">
-                @php
-                    $scriptFiles = glob(storage_path('app/protect-scripts/*.sh'));
-                @endphp
-                @if(count($scriptFiles) > 0)
-                    @foreach($scriptFiles as $sf)
-                    <div style="padding: 8px 12px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; color: #94a3b8; font-family: monospace; font-size: 13px;">
-                        📄 {{ basename($sf) }}
-                        <span style="float: right; color: #475569;">{{ number_format(filesize($sf) / 1024, 1) }} KB</span>
-                    </div>
-                    @endforeach
-                @else
-                    <p style="color: #64748b; font-style: italic;">Belum ada script yang diupload. Upload script atau jalankan perintah download di bawah.</p>
-                @endif
-            </div>
-        </div>
-
-        <div style="margin-top: 25px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 8px;">
-            <h4 style="color: #fbbf24; font-size: 14px; margin-bottom: 10px;">💡 Download Script dari GitHub</h4>
-            <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">Jalankan perintah ini via SSH untuk download semua script sekaligus:</p>
-            <code style="color: #93c5fd; font-size: 11px; display: block; padding: 10px; background: #020617; border-radius: 6px; word-break: break-all;">
-SCRIPTS_DIR="{{ storage_path('app/protect-scripts') }}" && mkdir -p "$SCRIPTS_DIR" && for i in 2 3 4 5 6 7 8 9 10 11 12 13; do curl -fsSL -o "$SCRIPTS_DIR/installprotect${i}.sh" "https://raw.githubusercontent.com/jhonaleyhost-oss/installprotect/refs/heads/main/installprotect${i}.sh" && chmod +x "$SCRIPTS_DIR/installprotect${i}.sh"; done && echo "✅ Download script selesai!"
-            </code>
-        </div>
-    </div>
-</div>
-
 <script>
 function showTab(tab, btn) {
     document.getElementById('tab-protections').style.display = 'none';
     document.getElementById('tab-config').style.display = 'none';
-    document.getElementById('tab-upload').style.display = 'none';
     document.getElementById('tab-' + tab).style.display = 'block';
-    
+
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 }
@@ -1934,7 +1936,7 @@ Route::group(['prefix' => 'protect-manager'], function () {
     Route::post('/install', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'install'])->name('admin.protect-manager.install');
     Route::post('/uninstall', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'uninstall'])->name('admin.protect-manager.uninstall');
     Route::post('/update-config', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'updateConfig'])->name('admin.protect-manager.update-config');
-    Route::post('/upload-script', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'uploadScript'])->name('admin.protect-manager.upload-script');
+    
     Route::post('/bulk-install', [\Pterodactyl\Http\Controllers\Admin\ProtectManagerController::class, 'bulkInstall'])->name('admin.protect-manager.bulk-install');
 });
 ROUTEEOF
@@ -2057,7 +2059,7 @@ echo "   • Sidebar menu 'Protect Manager' (hanya untuk Admin ID 1)"
 echo "   • Install/Uninstall proteksi via centang & klik"
 echo "   • Edit nama brand, teks proteksi, kontak"
 echo "   • Edit nama & deskripsi setiap proteksi"
-echo "   • Upload script proteksi baru"
+echo "   • Kustomisasi pesan akses ditolak & judul panel"
 echo "   • Bulk install (centang beberapa, terapkan sekaligus)"
 echo ""
 echo "✅ Semua script proteksi sudah otomatis didownload ke server."

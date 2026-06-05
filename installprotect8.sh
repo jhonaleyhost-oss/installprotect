@@ -45,10 +45,27 @@ class ServerController extends ClientApiController
      */
     public function index(GetServerRequest $request, Server $server): array
     {
-        // 🔒 Anti intip server orang lain (kecuali admin ID 1)
+        // 🔒 Anti intip server orang lain (kecuali admin ID 1, owner, atau subuser)
         $authUser = Auth::user();
 
-        if ((int) $authUser->id !== 1 && (int) $server->owner_id !== (int) $authUser->id) {
+        $allowed = false;
+        if ($authUser) {
+            if ((int) $authUser->id === 1) {
+                $allowed = true;
+            } elseif ((int) $server->owner_id === (int) $authUser->id) {
+                $allowed = true;
+            } else {
+                try {
+                    if ($server->subusers()->where('user_id', $authUser->id)->exists()) {
+                        $allowed = true;
+                    }
+                } catch (\Throwable $e) {
+                    // fallback diam
+                }
+            }
+        }
+
+        if (!$allowed) {
             abort(403, '@𝙅𝙃𝙊𝙉𝘼𝙇𝙀𝙔 𝙏𝙀𝘾𝙃 • 𝗔𝗸𝘀𝗲𝘀 𝗗𝗶 𝗧𝗼𝗹𝗮𝗸❌. 𝗛𝗮𝗻𝘆𝗮 𝗕𝗶𝘀𝗮 𝗠𝗲𝗹𝗶𝗵𝗮𝘁 𝗦𝗲𝗿𝘃𝗲𝗿 𝗠𝗶𝗹𝗶𝗸 𝗦𝗲𝗻𝗱𝗶𝗿𝗶.');
         }
 
@@ -75,3 +92,22 @@ echo "✅ Proteksi Anti Akses Server Controller berhasil dipasang!"
 echo "ðŸ“‚ Lokasi file: $REMOTE_PATH"
 echo "ðŸ—‚ï¸ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
 echo "ðŸ”’ Hanya Admin (ID 1) yang bisa Akses Server Controller."
+
+# === KUSTOMISASI PESAN AKSES DITOLAK (dari Protect Manager) ===
+if [ -n "$DENY_MSG_SERVER" ] && [ -f "$REMOTE_PATH" ]; then
+  python3 - "$REMOTE_PATH" "$DENY_MSG_SERVER" << 'PYABORT'
+import sys, re
+path, msg = sys.argv[1], sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+new_content = re.sub(
+    r"abort\(\s*403\s*,\s*(['\"])(?:\\\1|(?!\1).)*\1\s*\)",
+    "abort(403, " + repr(msg) + ")",
+    content
+)
+if new_content != content:
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print("✏️  Pesan akses server dikustomisasi: " + msg)
+PYABORT
+fi

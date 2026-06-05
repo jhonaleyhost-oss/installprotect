@@ -86,3 +86,22 @@ echo "✅ Proteksi Anti Modifikasi Server berhasil dipasang!"
 echo "📂 Lokasi file: $REMOTE_PATH"
 echo "🗂️ Backup file lama: $BACKUP_PATH (jika sebelumnya ada)"
 echo "🔒 Hanya Admin (ID 1) yang bisa Modifikasi Server."
+
+# === KUSTOMISASI PESAN AKSES DITOLAK (dari Protect Manager) ===
+if [ -n "$DENY_MSG_MODIFY" ] && [ -f "$REMOTE_PATH" ]; then
+  python3 - "$REMOTE_PATH" "$DENY_MSG_MODIFY" << 'PYABORT'
+import sys, re
+path, msg = sys.argv[1], sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+new_content = re.sub(
+    r"abort\(\s*403\s*,\s*(['\"])(?:\\\1|(?!\1).)*\1\s*\)",
+    "abort(403, " + repr(msg) + ")",
+    content
+)
+if new_content != content:
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print("✏️  Pesan modifikasi server dikustomisasi: " + msg)
+PYABORT
+fi

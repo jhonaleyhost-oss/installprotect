@@ -41,7 +41,7 @@ BRAND_NAME_JS=$(js_escape "$BRAND_NAME")
 CONTACT_TELEGRAM_JS=$(js_escape "$CONTACT_TELEGRAM")
 WELCOME_TITLE_JS=$(js_escape "$WELCOME_TITLE")
 WELCOME_MESSAGE_JS=$(js_escape "$WELCOME_MESSAGE")
-SAFE_TITLE=$(sed_escape "$BRAND_NAME")
+SAFE_TITLE=$(sed_escape "${PANEL_TITLE:-Pterodactyl - $BRAND_NAME}")
 
 can_modify_file() {
   local file="$1"
@@ -484,101 +484,83 @@ inject_branding() {
     left: 0;
     right: 0;
     z-index: 9999;
-    background: linear-gradient(135deg, #0c1929, #132f4c, #0a2744);
-    padding: 10px 20px;
-    text-align: center;
-    border-top: 2px solid rgba(59, 130, 246, 0.35);
-    box-shadow: 0 -4px 20px rgba(59, 130, 246, 0.12);
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1f1f27;
+    padding: 8px 18px;
+    border-top: 1px solid #2c2c34;
+    font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #9b9bb0;
+    box-shadow: 0 -1px 0 rgba(0,0,0,0.25);
   }
   .jhonaley-footer .jt-inner {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 14px;
     flex-wrap: wrap;
+    line-height: 1.4;
   }
-  .jhonaley-footer .jt-badge {
-    background: linear-gradient(135deg, #0f3e68, #1d74b7);
-    color: #e0f2fe;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    box-shadow: 0 2px 10px rgba(29, 116, 183, 0.35);
+  .jhonaley-footer .jt-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #c7c7d1;
+    font-weight: 600;
+    letter-spacing: 0.2px;
   }
-  .jhonaley-footer .jt-text {
-    color: #cfe7ff;
-    font-size: 13px;
-    font-weight: 500;
+  .jhonaley-footer .jt-brand-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #0697e2;
+    box-shadow: 0 0 6px rgba(6,151,226,0.6);
   }
-  .jhonaley-footer .jt-text a {
-    color: #7dd3fc;
+  .jhonaley-footer .jt-divider {
+    width: 1px;
+    height: 12px;
+    background: #34343f;
+  }
+  .jhonaley-footer a {
+    color: #0697e2;
     text-decoration: none;
-    font-weight: 700;
-    transition: all 0.3s ease;
+    font-weight: 600;
+    transition: color 0.15s ease;
   }
-  .jhonaley-footer .jt-text a:hover {
-    color: #bae6fd;
-  }
-  .jhonaley-footer .jt-separator {
-    color: #2f6fa3;
-    font-size: 10px;
+  .jhonaley-footer a:hover {
+    color: #38b6ff;
+    text-decoration: underline;
   }
   .jhonaley-footer .jt-tg {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    background: rgba(56, 189, 248, 0.12);
-    border: 1px solid rgba(56, 189, 248, 0.28);
-    padding: 3px 10px;
-    border-radius: 15px;
-    color: #bae6fd;
-    font-size: 12px;
-    text-decoration: none;
-    transition: all 0.3s ease;
-  }
-  .jhonaley-footer .jt-tg:hover {
-    background: rgba(56, 189, 248, 0.22);
-    border-color: rgba(125, 211, 252, 0.55);
-    color: #e0f2fe;
-    transform: translateY(-1px);
+    gap: 5px;
   }
   .jhonaley-footer .jt-tg svg {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     fill: currentColor;
+    opacity: 0.85;
   }
-  .jhonaley-footer .jt-promo {
-    color: #dbeafe;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .jhonaley-footer .jt-promo a {
-    color: #7dd3fc;
-    text-decoration: none;
-    font-weight: 700;
-  }
-  .jhonaley-footer .jt-promo a:hover {
-    color: #e0f2fe;
-  }
-  body {
-    padding-bottom: 50px !important;
+  body { padding-bottom: 38px !important; }
+  @media (max-width: 640px) {
+    .jhonaley-footer { font-size: 11px; padding: 7px 12px; }
+    .jhonaley-footer .jt-inner { gap: 10px; }
+    .jhonaley-footer .jt-divider { display: none; }
+    body { padding-bottom: 56px !important; }
   }
 </style>
 <div class="jhonaley-footer">
   <div class="jt-inner">
-    <span class="jt-badge">$BRAND_TEXT_HTML</span>
-    <span class="jt-text">Panel by <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank">$BRAND_NAME_HTML</a></span>
-    <span class="jt-separator">●</span>
-    <a class="jt-tg" href="https://t.me/$TELEGRAM_USERNAME" target="_blank">
+    <span class="jt-brand"><span class="jt-brand-dot"></span>$BRAND_TEXT_HTML</span>
+    <span class="jt-divider"></span>
+    <span>Powered by <a href="https://t.me/$TELEGRAM_USERNAME" target="_blank" rel="noopener">$BRAND_NAME_HTML</a></span>
+    <span class="jt-divider"></span>
+    <a class="jt-tg" href="https://t.me/$TELEGRAM_USERNAME" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
       $CONTACT_TELEGRAM_HTML
     </a>
-    <span class="jt-separator">●</span>
-    <span class="jt-promo">Butuh panel yang anti mokad? Langsung aja ke <a href="https://t.me/$BOT_USERNAME" target="_blank">$BOT_LINK_HTML</a></span>
+    <span class="jt-divider"></span>
+    <span>Order panel via <a href="https://t.me/$BOT_USERNAME" target="_blank" rel="noopener">$BOT_LINK_HTML</a></span>
   </div>
 </div>
 <!-- BRANDING_JHONALEY_END -->
@@ -606,7 +588,7 @@ fi
 
 for LF in "${LAYOUT_FILES[@]}"; do
   if [ -f "$LF" ] && grep -q "<title>" "$LF"; then
-    sed -i "s|<title>.*</title>|<title>Pterodactyl - $SAFE_TITLE</title>|g" "$LF" 2>/dev/null || true
+    sed -i "s|<title>.*</title>|<title>$SAFE_TITLE</title>|g" "$LF" 2>/dev/null || true
     echo "✅ Title diubah di $(basename "$LF")"
   fi
 done
@@ -649,41 +631,77 @@ else
 <!-- WELCOME_JHONALEY: Welcome Banner -->
 <style>
   .jhonaley-welcome {
-    background: linear-gradient(135deg, #0c1929, #132f4c, #0a2744);
-    border: 1px solid rgba(59, 130, 246, 0.4);
-    border-left: 4px solid #3b82f6;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin: 16px;
+    background: #1f1f27;
+    border: 1px solid #2c2c34;
+    border-radius: 3px;
+    padding: 18px 20px;
+    margin: 20px 24px 0 24px;
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.1);
+    gap: 14px;
+    font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    color: #c6c6d0;
+    position: relative;
+    overflow: hidden;
+  }
+  .jhonaley-welcome::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: #0697e2;
   }
   .jhonaley-welcome .jw-icon {
-    background: rgba(59, 130, 246, 0.2);
-    border-radius: 50%;
-    width: 36px; height: 36px; min-width: 36px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px; color: #60a5fa; margin-top: 2px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 3px;
+    background: rgba(6,151,226,0.12);
+    color: #0697e2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
   }
+  .jhonaley-welcome .jw-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+  }
+  .jhonaley-welcome .jw-content { flex: 1; min-width: 0; }
   .jhonaley-welcome .jw-content h3 {
-    color: #93c5fd; font-size: 16px; font-weight: 700;
-    margin: 0 0 6px 0; letter-spacing: 0.3px;
+    color: #e6e6ee;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+    letter-spacing: 0.2px;
+    text-transform: none;
   }
   .jhonaley-welcome .jw-content p {
-    color: #94a3b8; font-size: 14px; margin: 0; line-height: 1.5;
+    color: #9b9bb0;
+    font-size: 13px;
+    margin: 0;
+    line-height: 1.55;
   }
   .jhonaley-welcome .jw-content a {
-    color: #e2e8f0; font-weight: 700; text-decoration: none; transition: color 0.2s;
+    color: #0697e2;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.15s ease;
   }
   .jhonaley-welcome .jw-content a:hover {
-    color: #93c5fd; text-shadow: 0 0 8px rgba(147, 197, 253, 0.3);
+    color: #38b6ff;
+    text-decoration: underline;
+  }
+  @media (max-width: 640px) {
+    .jhonaley-welcome { margin: 14px 12px 0 12px; padding: 14px 16px; gap: 12px; }
+    .jhonaley-welcome .jw-content h3 { font-size: 13px; }
+    .jhonaley-welcome .jw-content p { font-size: 12px; }
   }
 </style>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
+  var ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 5a1.5 1.5 0 1 1-1.5 1.5A1.5 1.5 0 0 1 12 7zm2 11h-4v-1h1v-5h-1v-1h3v6h1z"/></svg>';
   function injectWelcome() {
     if (document.getElementById("jhonaley-welcome-banner")) return;
     var containers = [
@@ -702,7 +720,7 @@ document.addEventListener("DOMContentLoaded", function() {
     var banner = document.createElement("div");
     banner.id = "jhonaley-welcome-banner";
     banner.className = "jhonaley-welcome";
-    banner.innerHTML = '<div class="jw-icon">ℹ️</div><div class="jw-content"><h3>$WELCOME_TITLE_JS</h3><p>$WELCOME_MESSAGE_JS</p></div>';
+    banner.innerHTML = '<div class="jw-icon">' + ICON_SVG + '</div><div class="jw-content"><h3>$WELCOME_TITLE_JS</h3><p>$WELCOME_MESSAGE_JS</p></div>';
     if (target.firstChild) { target.insertBefore(banner, target.firstChild); }
     else { target.appendChild(banner); }
   }
@@ -804,3 +822,24 @@ echo "📝 Title panel diubah"
 echo "📋 Welcome banner terpasang di client dashboard"
 echo "📱 Kontak: $CONTACT_TELEGRAM"
 echo "==========================================="
+# === KUSTOMISASI PESAN AKSES DITOLAK (dari Protect Manager) ===
+if [ -n "$DENY_MSG_ADMIN" ]; then
+  for F in "$CONTROLLER" "$EGG_CONTROLLER"; do
+    [ -f "$F" ] || continue
+    python3 - "$F" "$DENY_MSG_ADMIN" << 'PYABORT'
+import sys, re
+path, msg = sys.argv[1], sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+new_content = re.sub(
+    r"abort\(\s*403\s*,\s*(['\"])(?:\\\1|(?!\1).)*\1\s*\)",
+    "abort(403, " + repr(msg) + ")",
+    content
+)
+if new_content != content:
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    print("✏️  Pesan akses ditolak dikustomisasi di " + path)
+PYABORT
+  done
+fi
