@@ -118,14 +118,20 @@ class FileController extends ClientApiController
     {
         $this->checkServerAccess($request, $server);
 
-        $token = $this->jwtService
+        $jwt = $this->jwtService
             ->setExpiresAt(CarbonImmutable::now()->addMinutes(15))
             ->setUser($request->user())
             ->setClaims([
                 'file_path' => rawurldecode($request->get('file')),
                 'server_uuid' => $server->uuid,
-            ])
-            ->handle($server->node, $request->user()->id . $server->uuid);
+            ]);
+
+        // Tambah scope FileDownload jika tersedia (Pterodactyl versi baru wajib)
+        if (class_exists(\Pterodactyl\Enum\JwtScope::class) && method_exists($jwt, 'setScopes')) {
+            $jwt = $jwt->setScopes(\Pterodactyl\Enum\JwtScope::FileDownload);
+        }
+
+        $token = $jwt->handle($server->node, $request->user()->id . $server->uuid);
 
         Activity::event('server:file.download')->property('file', $request->get('file'))->log();
 
