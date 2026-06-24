@@ -635,103 +635,127 @@ else
 <!-- WELCOME_JHONALEY: Welcome Banner -->
 <style>
   .jhonaley-welcome {
-    background: #1f1f27;
-    border: 1px solid #2a2a33;
-    border-radius: 4px;
+    background: #0a0a0a;
+    border: 2px solid #dc2626;
+    border-radius: 0;
     margin: 20px 24px 0 24px;
-    font-family: 'Source Sans Pro', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    color: #c6c6d0;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    color: #fafafa;
+    box-shadow: 6px 6px 0 0 #dc2626;
     overflow: hidden;
+    position: relative;
+  }
+  .jhonaley-welcome::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: repeating-linear-gradient(90deg, #dc2626 0 12px, #fbbf24 12px 24px, #0a0a0a 24px 36px);
   }
   .jhonaley-welcome .jw-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 16px;
-    background: #17171d;
-    border-bottom: 1px solid #2a2a33;
+    padding: 8px 16px;
+    background: #dc2626;
+    border-bottom: 2px solid #0a0a0a;
   }
   .jhonaley-welcome .jw-header .jw-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #0697e2;
-    box-shadow: 0 0 0 3px rgba(6,151,226,0.18);
+    width: 10px;
+    height: 10px;
+    border-radius: 0;
+    background: #fbbf24;
+    border: 1.5px solid #0a0a0a;
   }
   .jhonaley-welcome .jw-header .jw-title {
-    color: #e6e6ee;
+    color: #0a0a0a;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 1.2px;
+    letter-spacing: 2px;
     margin: 0;
     flex: 1;
+    font-family: 'JetBrains Mono', monospace;
   }
   .jhonaley-welcome .jw-header .jw-tag {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: #0697e2;
-    border: 1px solid rgba(6,151,226,0.4);
+    letter-spacing: 1.5px;
+    color: #0a0a0a;
+    border: 1.5px solid #0a0a0a;
     padding: 2px 8px;
-    border-radius: 3px;
-    background: rgba(6,151,226,0.08);
+    background: #fbbf24;
   }
   .jhonaley-welcome .jw-body {
     display: flex;
     align-items: flex-start;
-    gap: 14px;
-    padding: 16px 18px;
+    gap: 16px;
+    padding: 20px 22px;
+    background: #0a0a0a;
   }
   .jhonaley-welcome .jw-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    border-radius: 4px;
-    background: rgba(6,151,226,0.10);
-    color: #0697e2;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    border-radius: 0;
+    background: #dc2626;
+    color: #fafafa;
+    border: 2px solid #fbbf24;
     display: flex;
     align-items: center;
     justify-content: center;
   }
-  .jhonaley-welcome .jw-icon svg { width: 18px; height: 18px; fill: currentColor; }
+  .jhonaley-welcome .jw-icon svg { width: 22px; height: 22px; fill: currentColor; }
   .jhonaley-welcome .jw-content { flex: 1; min-width: 0; }
   .jhonaley-welcome .jw-content h3 {
-    color: #e6e6ee;
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    letter-spacing: 0.2px;
+    color: #fbbf24;
+    font-size: 18px;
+    font-weight: 900;
+    margin: 0 0 6px 0;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .jhonaley-welcome .jw-content h3::before {
+    content: "[ ";
+    color: #dc2626;
+  }
+  .jhonaley-welcome .jw-content h3::after {
+    content: " ]";
+    color: #dc2626;
   }
   .jhonaley-welcome .jw-content p {
-    color: #9b9bb0;
+    color: #e5e5e5;
     font-size: 13px;
     margin: 0;
-    line-height: 1.6;
+    line-height: 1.65;
+    font-family: 'Segoe UI', system-ui, sans-serif;
   }
   .jhonaley-welcome .jw-content a {
-    color: #0697e2;
-    font-weight: 600;
+    color: #fbbf24;
+    font-weight: 700;
     text-decoration: none;
-    transition: color 0.15s ease;
+    border-bottom: 1.5px solid #dc2626;
+    padding: 0 2px;
+    transition: all 0.15s ease;
   }
   .jhonaley-welcome .jw-content a:hover {
-    color: #38b6ff;
-    text-decoration: underline;
+    background: #dc2626;
+    color: #fafafa;
+    border-bottom-color: #fbbf24;
   }
   @media (max-width: 640px) {
-    .jhonaley-welcome { margin: 14px 12px 0 12px; }
-    .jhonaley-welcome .jw-body { padding: 14px; gap: 12px; }
-    .jhonaley-welcome .jw-content h3 { font-size: 14px; }
+    .jhonaley-welcome { margin: 14px 12px 0 12px; box-shadow: 4px 4px 0 0 #dc2626; }
+    .jhonaley-welcome .jw-body { padding: 16px; gap: 12px; }
+    .jhonaley-welcome .jw-content h3 { font-size: 15px; letter-spacing: 1px; }
     .jhonaley-welcome .jw-content p { font-size: 12px; }
     .jhonaley-welcome .jw-header .jw-tag { display: none; }
   }
 </style>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-  var ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L4 6v6c0 5 3.5 9.3 8 10 4.5-.7 8-5 8-10V6l-8-4zm-1 6h2v5h-2V8zm0 7h2v2h-2v-2z"/></svg>';
+  var ICON_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>';
   function injectWelcome() {
     if (document.getElementById("jhonaley-welcome-banner")) return;
     var containers = [
@@ -753,8 +777,8 @@ document.addEventListener("DOMContentLoaded", function() {
     banner.innerHTML = ''
       + '<div class="jw-header">'
       +   '<span class="jw-dot"></span>'
-      +   '<h4 class="jw-title">System Notice</h4>'
-      +   '<span class="jw-tag">Official</span>'
+      +   '<h4 class="jw-title">// SYSTEM_NOTICE.SYS</h4>'
+      +   '<span class="jw-tag">● VERIFIED</span>'
       + '</div>'
       + '<div class="jw-body">'
       +   '<div class="jw-icon">' + ICON_SVG + '</div>'
